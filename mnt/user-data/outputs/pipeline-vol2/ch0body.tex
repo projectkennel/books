@@ -1,0 +1,57 @@
+Project Kennel is a userspace reference monitor for the interactive user
+level, a way to run code under your own account without granting it your
+own authority. This is the second of its two volumes; the first set out
+the design without reference to any operating system, and this one
+realises that design on Linux. The altitude is inverted on purpose.
+Where the first volume held above the mechanism, refusing to name a
+syscall or a kernel feature so that its claims would read the same on
+any port, this one names them throughout: the kernel facilities the
+confinement is woven from, the processes that hold and drop privilege,
+the bus the workload talks across, the crates the trusted base is built
+in. Every claim here answers a question the first volume left open on
+purpose, the question of how, on this kernel, a contract stated there is
+kept.
+
+The volume is in four parts. The first is the machinery: the kernel
+facilities and how they are woven into a confinement, the processes that
+build and supervise a kennel and the single one that holds privilege,
+the binder bus every kennel talks across, the crate topology of the
+trusted base, and the command surface that drives it. This part has no
+analogue in the first volume, because it is the substrate the first
+volume deliberately did not name. The second takes the resource classes
+the first volume's second part defined and gives each its Linux
+mechanism, from the filesystem through execution and the network to the
+local, cryptographic, and image surfaces and the smaller remaining ones.
+The third is the interplay: how a kennel spawns another, how kennels
+offer and consume one another's capabilities, and how a service too rich
+to broker is interposed as a confined instance of itself. The fourth is
+the language and the tools: the grammar a confinement is written in, the
+compiler that turns it into the artefact the runtime enforces, the keys
+that sign it, and the account the monitor keeps. The first volume did
+not separate the last two: it carried the interplay and the declared
+grant together, and this volume takes them apart because the mechanism
+does.
+
+Three citation forms point out of the prose, into two registers and a
+catalogue. A name such as \texttt{construction-by-absence} points into
+the first volume's principle register (\texttt{PRINCIPLES.md}): it names
+the design posture a mechanism keeps, the contract this volume is here
+to honour. A name such as \texttt{quarantine-the-unsafe} points into
+this volume's own register (\texttt{CONSTRUCTION.md}): it names a
+construction principle the code itself holds to, a property checkable by
+opening the repository rather than by reading the design. An identifier
+such as \texttt{T5.1} points into the threat catalogue
+(\texttt{THREATS.md}), shared with the first volume, and names a
+concrete threat the mechanism in hand closes. Literature is cited by
+name in brackets and resolved at the end, as in the first volume.
+
+This volume assumes the first. A reader can follow the mechanism here
+without the design behind it, but the reason a mechanism is shaped the
+way it is lives in the first volume, and the principle citations are the
+way back to it. The machinery of the first part is assumed by every
+chapter after it, so it is the one part meant to be read before the
+others; a resource chapter then stands largely on its own, with its
+citations leading back to the design it realises and the threats it
+answers. The kernel floor is the project floor throughout, kernel 6.10
+for Landlock ABI 5, and a mechanism that needs more says so where it is
+named.

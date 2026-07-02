@@ -1,0 +1,217 @@
+\hypertarget{oci-images}{%
+\chapter{11. OCI images}\label{oci-images}}
+
+An OCI image is a poor fit for the way Kennel builds a world, and Kennel
+runs images anyway. It runs them because images are how workloads are
+shipped today, the common denominator nearly every container tool and
+deployment assumes, and a confinement framework that could not accept
+the format the world has settled on would be confining nothing anyone
+runs. Confining them is a concession to adoption, not a claim that the
+model is good, and the work is to take the format the world hands Kennel
+and confine it as tightly as that format allows.
+
+Every chapter so far assumed the kennel's world was built by Kennel out
+of host parts: a fresh tmpfs root, the host's own \texttt{/usr} borrowed
+read-only, an execute allowlist naming each binary. The OCI model
+changes the ground under all of it. The root is no longer constructed,
+it is an image the operator supplied, and the image is untrusted by the
+same logic that makes the workload untrusted. What changes when the
+floor of the world arrives as a single third-party artefact, and what
+has to be rebuilt because it does, is the subject here.
+
+\hypertarget{booting-an-image-without-a-daemon}{%
+\section{11.1 Booting an image without a
+daemon}\label{booting-an-image-without-a-daemon}}
+
+The obvious way to run an image is to talk to a container daemon, and
+Kennel does not, because the daemon is the wrong thing to trust. A
+Docker daemon is a root-equivalent orchestration engine, and the two
+ways to reach it both fail the premises. Proxying its socket puts a
+large stateful protocol parser in the host trusted base in front of a
+\texttt{create-container} verb that is host-root. Running a rootless
+engine inside the kennel hands the workload \texttt{unshare} and
+\texttt{mount}, the two surfaces container escapes most often turn on.
+Kennel boots an unpacked rootfs directly under its own namespaces, as
+inert filesystem content, and takes neither bridge.
+
+The fetch and the run are split into two verbs so that everything that
+parses the image runs where a parser bug is contained:
+
+\begin{kennelcode}
+kennel oci build <name> -- <image-ref>   # fetch + unpack into the store
+kennel oci run   <name>                  # boot the named entry under policy
+\end{kennelcode}
+
+The build pulls and unpacks into a per-operator store; the run resolves
+the named entry and boots it under its signed policy. Every parser the
+image touches, the registry protocol, the manifest, the tar extraction,
+the image's own runtime config, runs inside a confined kennel at
+workload authority, so a malicious image breaks a sandbox that was
+already disposable and never reaches the daemon
+(\texttt{quarantine-the-unsafe}). The trusted base is the size it was.
+The split also partitions the policy grammar: an OCI policy carries a
+mandatory \texttt{{[}rootfs{]}} block and never a
+\texttt{{[}workload{]}}, a normal policy the reverse, and the two are
+mutually exclusive at the block level rather than by a runtime check
+(\texttt{make-invalid-unrepresentable}). The substrate-replacement
+primitive exists only in the grammar the OCI verb consumes, so the
+universal model most workloads use never grows it.
+
+\hypertarget{the-image-as-a-declared-substrate}{%
+\section{11.2 The image as a declared
+substrate}\label{the-image-as-a-declared-substrate}}
+
+Running a third-party image is a trust decision, and Kennel makes the
+operator own it rather than making it for them. The operator declares an
+image as the execution substrate the way they declare a host directory
+writable: an input the policy names and the signature covers. The grant
+is loud, in the class of host networking and device passthrough,
+carrying a required reason, and the compiler derives a substrate-trust
+exposure from its mere presence and surfaces it in the risk report
+against that reason (\texttt{footgun-warn-dont-forbid},
+\texttt{tell-me-why}). Kennel does not vet the image, launder its
+contents, or assert anything about bytes it did not pin (T3.8).
+
+What it does assert is provenance. The build pulls by digest, resolving
+a tag to a digest at build time and recording it, so even a tag-built
+image freezes to a pinned hash, and a build with no resolvable digest is
+refused, because a substrate with no provenance cannot be told apart
+from an error (\texttt{refuse-to-start}). The store entry the build
+writes is what the run consumes:
+
+\begin{kennelcode}
+<store>/<name>/
+  rootfs/        the unpacked image filesystem
+  config.json    the image's runtime config
+  digest         the resolved image@sha256 the build pulled from
+  policy.toml    the scaffolded run policy (operator completes + signs)
+\end{kennelcode}
+
+The first three are the integrity unit, since the launcher trusts the
+config for the entrypoint and env; the policy sits outside it, covered
+by its own signature. The signature then covers the substrate, not the
+invocation: it pins the image by digest and the policy grants, but not
+an exact command line, so the same signed OCI policy can run different
+commands where the standard model's signed \texttt{argv} could not.
+Provenance is the floor, and content integrity is opt-in hardening
+layered above it: a content-addressed store entry the runner verifies
+before pivot, and per-file verity that makes every library load and the
+config the launcher reads tamper-evident. The operator who needs those
+rungs pays for them, the one who does not is not blocked.
+
+\hypertarget{the-overlay}{%
+\section{11.3 The overlay}\label{the-overlay}}
+
+An untrusted image cannot simply be the root, because Kennel needs a few
+files to win over whatever the image ships and a scratch image ships
+almost nothing. The view is built as an overlay. The image is a
+read-only lower, never the writable layer, because an image that could
+be written would take the workload's writes into the digest-pinned store
+entry and dissolve the integrity unit. Above it sits a small Kennel
+layer holding the handful of \texttt{/etc} files the resolver and the
+persona need, so they win by layer precedence rather than by overwriting
+anything, a real file outranking an image symlink at the same path with
+no unlink-and-replace. Below it sits a scaffold of empty mountpoint
+directories, so a distroless image that ships no \texttt{/proc},
+\texttt{/dev}, or \texttt{/tmp} still boots.
+
+\begin{kennelcode}
+lowerdir = kennel-etc : image : scaffold   # leftmost wins; the image is a read-only lower
+upperdir = <ephemeral | persisted>         # always present; never the image
+\end{kennelcode}
+
+Those \texttt{/etc} files are a default and not a boundary:
+\texttt{/etc} is writable-through, a workload may copy a file up into
+its own layer, and it harms only itself, because what enforces
+confinement is the namespace, the BPF, the uid map, Landlock, and
+seccomp, never the content of a file.
+
+There is always a writable upper, because an image expects a writable
+root, and the operator chooses only whether it survives teardown. The
+default discards it. Persisting it is the loud value, because a
+persisted upper accumulates divergence outside the integrity ladder, and
+the risk report says so. Whole-tree immutability is not the absence of
+an upper but a lock expressed over it, which is the next section.
+
+\hypertarget{closure-lock}{%
+\section{11.4 Closure-lock}\label{closure-lock}}
+
+The unprivileged build cannot preserve the image's ownership. With no
+subuid range it cannot \texttt{chown} extracted files to the image's
+uids, so it flattens every inode to the single persona uid, and that
+does more than drop root: it erases every ownership boundary inside the
+image at once, root from app and app from everything, because there is
+now one owner. The workload runs as that owner, so nothing in the tree
+is read-only to it by permission, its own binaries included. Left there,
+the image under Kennel would be strictly more permissive than the same
+image under Docker, where the app uid still cannot write root-owned
+\texttt{/usr}.
+
+Closure-lock restores the one boundary the flatten destroyed, that the
+executable surface is not self-writable. It cannot be a permission
+scheme, because after the flatten there is no foreign owner left for
+permissions to protect, and it is not Landlock, because Landlock rights
+are additive and a broad write over \texttt{/} cannot be subtracted at
+\texttt{/usr}: default-writable-except-the-closure is not a shape a
+sub-path rule can express. The lock is a set of read-only mounts over
+the merged root, so a write to a locked path fails with \texttt{EROFS}
+regardless of owner, and the workload cannot undo it, holding no
+\texttt{CAP\_SYS\_ADMIN} in its namespace and barred from \texttt{mount}
+by seccomp. The locked set is derived at build and written into the
+policy in plain text, where the operator reviews and signs it:
+
+\begin{kennelcode}
+[rootfs]
+image    = "ghcr.io/org/app@sha256:..."   # pinned by digest
+reason   = "vendor image"                  # required; derives T3.8
+readonly = ["/usr", "/bin", "/lib"]        # closure-lock: read-only mounts, write => EROFS
+writable = ["/usr/lib/python3.12"]         # carve a hole back out; a derived risk
+\end{kennelcode}
+
+The build proposes the resurrected boundary and the signature makes it
+real.
+
+The derivation turns on one question, whether the image's
+\texttt{config.User} is non-root. An image that runs as root declares a
+writable substrate by intent, so nothing is locked, which is the same
+posture Docker gives a root container and the reason runtime
+\texttt{apt} and global \texttt{pip} keep working. That is a deliberate
+write-xor-execute waiver: the substrate is granted execute coarsely,
+with no per-binary allowlist inside an image, and with nothing locked
+the same paths are writable and executable at once, so the separation
+the standard run model holds between a read-only \texttt{/usr} and a
+default-deny execute does not hold here. A non-root image earns the
+separation back: the coarse filesystem closure, \texttt{/usr},
+\texttt{/bin}, \texttt{/sbin}, and the library directories the
+merged-usr symlinks resolve into, is locked read-only, so its executable
+surface stays equal to the pinned image for the session. The estimate is
+high-level and has two known holes, an image that drops privilege in its
+entrypoint reads as root and gets no lock, and app code outside the
+system directories stays writable; the operator closes those by hand
+with a writable carve-out for over-reach and an added lock for
+under-reach.
+
+\hypertarget{what-holds-and-what-is-waived}{%
+\section{11.5 What holds, and what is
+waived}\label{what-holds-and-what-is-waived}}
+
+The line worth ending on is which guarantees survive an untrusted root
+and which the operator knowingly gives up. Everything the confinement
+limb provides survives unchanged, because none of it ever depended on
+where the substrate came from: the network namespace and its egress
+boundary, the brokered crossings, the proxy and the network policy, the
+masked identity, the constructed device allowlist, seccomp, and the
+closure-lock boundary for a non-root image. The workload gains no
+capability, no \texttt{mount}, no nested user namespace, and the trusted
+base does not grow, because the launcher and every image parser run at
+workload authority and not in the daemon.
+
+What the operator waives is content. The image supplies its own runtime
+closure, the loader and the libraries and the entrypoint, and Kennel
+pins the provenance of the whole rather than the identity of each part:
+the digest is the assertion, and the dynamic closure beneath it is
+unhashed unless the verity rung is enabled. The posture claim is
+therefore confinement, not content integrity. An OCI kennel is contained
+exactly as tightly as any other, and what the operator accepted, the
+moment they named an image as their floor, is that the bytes inside that
+floor are the image's word and not Kennel's.

@@ -1,0 +1,143 @@
+# 11. The capability mesh
+
+By the time a kennel is running, the design has spent four chapters making sure it cannot see any
+other. Its filesystem holds no other kennel's files; its network reaches no other kennel's services;
+its local surface names no other kennel's sockets. Two kennels on the same machine are, by default, as
+invisible to each other as two machines (`construction-by-absence`). That is usually right, but not
+always. Real work sometimes needs one confined workload to use a capability another confined workload
+provides: an application that must render to a display server it does not itself run, reach a session
+bus through a broker it does not host, read from a cache that lives in a kennel of its own. The mesh is
+the deliberate exception that allows this: without either kennel gaining the other's authority, and
+without disturbing the rule that kennels have no hold on one another.
+
+The exception is kept as narrow as the rule. A provider and a consumer remain siblings under the
+framework, neither nested in the other; the only thing that passes between them is the single connector
+the operator declared and the framework brokered. All this adds is how that one seam is
+opened safely between two confinements that still cannot, in any other respect, see each other.
+
+## 11.1 Name, not peer
+
+A capability enters the mesh by being offered and reached, and the two declarations are deliberately
+blind to each other. A provider offers a capability under a public name (the way a service announces
+an interface, not the way a process announces itself) and lists nothing about who may consume it. A
+consumer reaches for a capability by that same name, and names no provider. Nothing in either
+declaration points at another kennel; there is no peer reference anywhere on the policy surface. A
+consumer asks for the display, or the cache, not for a kennel, and the framework resolves that name, at
+runtime, to whoever offers it.
+
+That blindness is what lets the policies stay independent. Because no declaration names another kennel,
+each policy is complete on its own (it can be written, compiled, and signed with no other kennel in
+view), and the cross-kennel reach it asks for is resolved later, against whatever providers the
+operator has installed. The reach is real, but it is never authored as a link; it is two
+independent declarations that the framework, holding both, recognises as a matched pair.
+
+And the matching is deny-by-default, the discipline carried straight from delegation. A workload cannot
+author a cross-kennel reach any more than it could author a policy (`request-dont-author`); both the
+offer and the use are signed declarations, and the framework brokers only the pairs where both sides
+declared and the operator signed both. What a kennel can reach is a projection of those declarations,
+computed fresh, never a standing list of grants left lying in the daemon. Where a public name is not
+enough (where more than one kennel might offer the same name and a consumer must be sure of the one it
+meant), provider and consumer can pair on a second key, a private one this time. It is not a secret in
+the sense of a credential whose strength is its concealment; it is the other half of the lookup. The
+public name takes a consumer to everything offered under it, the way a title takes you to a shelf; the
+private key picks the one intended provider from among them, the way a catalogue number picks the one
+volume. Both are lookup keys (one advertised, one not), and the framework requires both to match before
+it brokers the pair. The private key names no kennel either: it is a value the intended provider and
+consumer happen to share so the match lands on the right one, not a reference either holds to the other.
+
+## 11.2 Resolution is runtime
+
+A cross-kennel match cannot be settled when a policy is signed, and the design is careful not to
+pretend it can. Each policy is compiled and signed alone (the compiler only ever holds the one in
+front of it), and the providers that can answer a consumer are whatever the operator has installed by
+the time the consumer runs, not whatever happened to exist when the consumer was signed. To promise at
+signing time that a given reach will resolve would be to make a signed, immutable artefact depend on a
+separate, mutable, independently-authored one: a promise the system has no way to keep. So matching is
+a runtime property, and the design puts it there rather than faking it earlier.
+
+What can be checked early is checked early, and only that: holding one policy, the compiler confirms
+each offer and each use is well-formed and that a reserved name is one the policy is entitled to claim:
+everything decidable from the single artefact, nothing that consults another kennel. The rest waits for
+construction, when the consumer's name is resolved against the catalogue of what is installed.
+A consumer says, of each capability it reaches, whether it can live without it. A required capability
+that resolves to nothing (no installed provider offers the name) fails the kennel's construction
+loudly, rather than starting a workload missing something it depends on; an optional one that resolves
+to nothing is simply skipped, and the workload bears the absence. It is the hard-versus-soft dependency
+distinction systemd draws between what a unit requires and what it merely wants, evaluated here against
+what the deployment has rather than what a policy hoped for.
+
+## 11.3 Typed shapes
+
+A capability also carries its shape (the kind of transport by which it is reached), and the consumer
+must state the shape it expects, because the ways of reaching a capability are not interchangeable. A
+connected socket, a name made reachable on the bus, and a brokered channel are acquired through
+entirely different means; a consumer that expects one and is handed another has been misdelivered, not
+served. So the broker matches shape as well as name, and refuses a mismatch at the moment of connection
+rather than letting a consumer find it as a failure later.
+
+The set of shapes is small and closed on purpose, and the reason is the discipline that has governed
+every facade so far. Each shape is a transport the framework already mediates: the local socket of the
+services chapter, the bus reached through that same chapter's broker, the channel that carries a
+delegated sibling. The mesh adds no new way to move bytes between kennels; it adds a way to declare and
+broker the ways that already exist. A single catalogue and a single broker describe every cross-kennel
+reach uniformly, and widening the mesh means teaching it another transport the framework already
+brokers, never a new wire protocol in the trusted path (`do-less`). The broker itself stays where every
+mediator in this design stays: it matches, it authorises, it mints the connector, and it steps out of
+the bytes that then flow (`control-not-data-plane`).
+
+One thing the broker never does is hand a consumer a connection it has not yet asked for. A capability
+is reached on demand, when the workload acts, not pressed into the kennel at construction, which is
+also what lets a provider stay down until it is first reached and come up only then, so a standing
+service that no running kennel is currently consuming costs nothing to have offered.
+
+## 11.4 The standing provider
+
+What the mesh carries that delegation did not is permanence. A delegated sibling was ephemeral: spun
+up for a task, reaped when the requester was done. A mesh provider is usually a standing service: a
+confined kennel the operator enables once and leaves up, serving many consumers across its life: the
+confined display service the earlier chapters pointed toward, a session-bus broker, a shared cache.
+Permanence changes the trust the provider carries and the residual it leaves (`T3.10`).
+
+A provider is, almost by definition, code that needs a foothold in the host: the display service must
+reach the real display, the bus broker the real bus, the cache the real storage. The ordinary way to
+give code a foothold in the host is to run it in the host: unconfined, at the user's full authority,
+trusted because there seemed nowhere else to put it. Kennel puts it in a kennel instead. A provider is
+itself a confined workload, granted exactly the one leg into the host its job requires and nothing
+more: the same confinement-and-enablement structure every other kennel runs under, turned on the very
+services that would otherwise be the unconfined host-side code everything else depends on. The trust it
+carries is layered accordingly, by the mechanism delegation already established. A reserved name cannot
+be authored by a policy that simply fancies it: a reserved namespace belongs to a tier, and only that
+tier's key may sign a template claiming a name within it. The `org.projectkennel.*` namespace is the
+project maintainers', always: a name under it is honoured only on a maintainer-signed template, and no
+host or operator signature can claim one. A host may reserve a namespace of its own in turn
+(`com.acme.*`, say) for the standing services it runs on its own machines; a name under that prefix is
+honoured only on a template signed by that host's key. The prefix is the claim of authority and the
+signature is its proof, and the two must agree or the name is refused. What the operator does is take
+such a signed template (the maintainers' or the host's) and adapt their own version of it, filling
+the fields it leaves mutable, inheriting the reserved name and the rest exactly as signed, and enable
+it, the enablement being the grant of the host foothold. The vouching is layered to match: the tier
+that owns the namespace signs the reserved shape, and the operator stands up this instance of it. The
+shared thing that many confinements lean on is held to a higher bar than the private thing one workload
+holds: signed, at its origin, by the tier that owns the name, and bounded, where the operator varies
+it, to the blanks its author left open.
+
+The residual is the other face of the same permanence. A standing provider that is compromised is
+compromised for every consumer that reaches it, for as long as it stays up: a wider blast than an
+ephemeral sibling's, whose damage ends with its task. The mesh does not erase that exposure; it
+replaces a worse one. Without it, the display, the bus, the cache are unconfined host code, and an
+application reaches them at the user's full authority: a compromise anywhere in that chain is
+host-wide. With it, those services are themselves confined to the one host leg each was granted, and
+the application reaches them through a declared, brokered, deny-by-default seam; a compromise is bounded
+to a provider that holds little, and to the consumers that declared they would trust it. The exposure
+is named, narrowed, and in view: far smaller than the ambient reach it replaces, and never pretended
+away.
+
+With the mesh, the resource classes are complete. Every kind of thing a workload touches (its files,
+what it may run, the network, the local services of its session, the images it runs inside, the
+siblings it spawns, and now the capabilities it shares with other confinements) has been answered by
+the same two limbs and the same handful of principles. The mesh comes last because it is the one
+exception to the isolation all the others build, and it earns the exception by holding to the rules
+they established: declared, not authored; brokered, not ambient; deny-by-default; and narrowed to the
+single seam the operator opened. What remains, in the chapters that follow, is not another resource but
+the grant itself: how a policy is written, composed, signed, and made to fail safe, the declared
+authority every one of these chapters has taken as given.

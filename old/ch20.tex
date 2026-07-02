@@ -1,0 +1,1357 @@
+\hypertarget{the-policy-language}{%
+\chapter{20. The policy language}\label{the-policy-language}}
+
+\emph{Generated from \texttt{schema/policy.toml.schema}. Current as of
+0.5.0.}
+
+\hypertarget{audit}{%
+\section{\texorpdfstring{\texttt{{[}audit{]}}}{{[}audit{]}}}\label{audit}}
+
+\texttt{{[}audit{]}}: sink selection, per-class levels, and per-sink
+tuning
+
+\begin{kennelcode}
+[audit]
+# optional
+sinks    = ["..."]
+\end{kennelcode}
+
+Contains: \texttt{{[}audit.dbus{]}}, \texttt{{[}audit.exec{]}},
+\texttt{{[}audit.file{]}}, \texttt{{[}audit.filesystem{]}},
+\texttt{{[}audit.journald{]}}, \texttt{{[}audit.network{]}},
+\texttt{{[}audit.stdout{]}}, \texttt{{[}audit.syslog{]}},
+\texttt{{[}audit.unix{]}}.
+
+\begin{description}
+\tightlist
+\item[\texttt{sinks}]
+optional. Active sinks (\texttt{file}, \texttt{journald},
+\texttt{syslog}, \texttt{stdout}). Default \texttt{{[}"file"{]}}.
+\end{description}
+
+\hypertarget{audit.dbus}{%
+\subsection{\texorpdfstring{\texttt{{[}audit.dbus{]}}}{{[}audit.dbus{]}}}\label{audit.dbus}}
+
+\texttt{{[}audit.dbus{]}} level.
+
+\begin{kennelcode}
+[audit.dbus]
+# optional
+level    = "off" | "denies-only" | "summary" | "full"
+\end{kennelcode}
+
+\begin{description}
+\tightlist
+\item[\texttt{level}]
+optional. One of \texttt{off}, \texttt{denies-only}, \texttt{summary},
+\texttt{full}. One of \texttt{off}, \texttt{denies-only},
+\texttt{summary}, \texttt{full}.
+\end{description}
+
+\hypertarget{audit.file}{%
+\subsection{\texorpdfstring{\texttt{{[}audit.file{]}}}{{[}audit.file{]}}}\label{audit.file}}
+
+\texttt{{[}audit.file{]}} tuning.
+
+\begin{kennelcode}
+[audit.file]
+# optional
+compress_after_seconds = 0
+dir      = "..."
+retain_count = 0
+rotate_at_bytes = "..."
+\end{kennelcode}
+
+\begin{description}
+\tightlist
+\item[\texttt{compress\_after\_seconds}]
+optional. Gzip a rotated file this many seconds after rotation.
+\item[\texttt{dir}]
+optional. Override the per-kennel directory (placeholders allowed).
+\item[\texttt{retain\_count}]
+optional. Keep at most this many rotated files per class.
+\item[\texttt{rotate\_at\_bytes}]
+optional. Rotate at this size (e.g.~\texttt{"64M"}, \texttt{"1G"}; bare
+= bytes).
+\end{description}
+
+\hypertarget{audit.journald}{%
+\subsection{\texorpdfstring{\texttt{{[}audit.journald{]}}}{{[}audit.journald{]}}}\label{audit.journald}}
+
+\texttt{{[}audit.journald{]}} --- no fields; present to allow the empty
+table.
+
+\hypertarget{audit.syslog}{%
+\subsection{\texorpdfstring{\texttt{{[}audit.syslog{]}}}{{[}audit.syslog{]}}}\label{audit.syslog}}
+
+\texttt{{[}audit.syslog{]}} tuning.
+
+\begin{kennelcode}
+[audit.syslog]
+# optional
+facility = "..."
+\end{kennelcode}
+
+\begin{description}
+\tightlist
+\item[\texttt{facility}]
+optional. Syslog facility (\texttt{user}, \texttt{daemon},
+\texttt{auth}, \ldots). Default \texttt{user}.
+\end{description}
+
+\hypertarget{cap}{%
+\section{\texorpdfstring{\texttt{{[}cap{]}}}{{[}cap{]}}}\label{cap}}
+
+\texttt{{[}cap{]}}: capabilities and \texttt{no\_new\_privs}.
+
+\begin{kennelcode}
+[cap]
+# optional
+bounding_set = ["..."]
+no_new_privs = true
+\end{kennelcode}
+
+\begin{description}
+\tightlist
+\item[\texttt{bounding\_set}]
+optional. The capability bounding set to retain (empty drops them all).
+\item[\texttt{no\_new\_privs}]
+optional. \texttt{PR\_SET\_NO\_NEW\_PRIVS}. A framework invariant once
+resolved (must be true).
+\end{description}
+
+Example, from \texttt{toml/templates/base-bwrap}:
+
+\begin{kennelcode}
+[cap]
+no_new_privs = true
+bounding_set = []
+\end{kennelcode}
+
+\hypertarget{consumes}{%
+\section{\texorpdfstring{\texttt{{[}{[}consumes{]}{]}}}{{[}{[}consumes{]}{]}}}\label{consumes}}
+
+One \texttt{{[}{[}consumes{]}{]}} entry, a capability this kennel
+reaches over the mesh.
+
+\begin{kennelcode}
+[[consumes]]
+# required
+name     = "..."
+shape    = "af-unix" | "dbus-name" | "binder-connector"
+# optional
+at       = "..."
+env      = ["..."]
+key      = "..."
+required = true
+# decoration
+reason   = "..."
+\end{kennelcode}
+
+\begin{description}
+\tightlist
+\item[\texttt{at}]
+optional. Where the brokered connector is delivered, in this kennel's
+own view.
+\item[\texttt{env}]
+optional. Environment variable(s) synthesised into this kennel to name
+the connector.
+\item[\texttt{key}]
+optional. An optional private match token; must match the provider's.
+\item[\texttt{name}]
+required. The capability's public identifier, resolved against the
+catalogue at runtime.
+\item[\texttt{reason}]
+decoration. Why this capability is consumed (required).
+\item[\texttt{required}]
+optional. Whether the capability's absence fails kennel construction.
+Hard dependency by
+\item[\texttt{shape}]
+required. The transport it expects; the broker refuses a mismatched
+shape. One of \texttt{af-unix}, \texttt{dbus-name},
+\texttt{binder-connector}.
+\end{description}
+
+Example, from \texttt{toml/templates/gui-session}:
+
+\begin{kennelcode}
+[[consumes]]
+name = "org.projectkennel.wayland"
+shape = "af-unix"
+at = "/tmp/wayland-0"
+required = true
+reason = "the confined desktop session reaches its display server — a broker-spawned nested compositor — over the mesh"
+\end{kennelcode}
+
+\hypertarget{dbus}{%
+\section{\texorpdfstring{\texttt{{[}dbus{]}}}{{[}dbus{]}}}\label{dbus}}
+
+\texttt{{[}dbus{]}}: D-Bus mediation.
+
+Contains: \texttt{{[}dbus.audit{]}}, \texttt{{[}dbus.session{]}},
+\texttt{{[}dbus.system{]}}.
+
+\hypertarget{dbus.audit}{%
+\subsection{\texorpdfstring{\texttt{{[}dbus.audit{]}}}{{[}dbus.audit{]}}}\label{dbus.audit}}
+
+\texttt{{[}dbus.audit{]}}: per-kennel D-Bus call audit verbosity.
+
+\begin{kennelcode}
+[dbus.audit]
+# optional
+level    = "off" | "summary" | "full"
+\end{kennelcode}
+
+\begin{description}
+\tightlist
+\item[\texttt{level}]
+optional. Verbosity (\texttt{"off"}, \texttt{"summary"},
+\texttt{"full"}). One of \texttt{off}, \texttt{summary}, \texttt{full}.
+\end{description}
+
+\hypertarget{dbus.session}{%
+\subsection{\texorpdfstring{\texttt{{[}dbus.session{]}}}{{[}dbus.session{]}}}\label{dbus.session}}
+
+\texttt{{[}dbus.session{]}}: the user session bus (the common case:
+notifications, portals).
+
+\begin{kennelcode}
+[dbus.session]
+# optional
+enabled  = true
+\end{kennelcode}
+
+Contains: \texttt{{[}dbus.session.allow{]}},
+\texttt{{[}dbus.session.deny{]}}.
+
+\begin{description}
+\tightlist
+\item[\texttt{enabled}]
+optional. Whether this bus is reachable at all. Absent/\texttt{false} ⇒
+no connection to this bus.
+\end{description}
+
+\hypertarget{dbus.session.allow}{%
+\subsubsection{\texorpdfstring{\texttt{{[}dbus.session.allow{]}}}{{[}dbus.session.allow{]}}}\label{dbus.session.allow}}
+
+\texttt{{[}dbus.\textless{}bus\textgreater{}.allow{]}}: what the kennel
+may reach (an allowlist; default-deny).
+
+\begin{kennelcode}
+[dbus.session.allow]
+# optional
+broadcast = ["..."]
+call     = ["..."]
+own      = ["..."]
+talk     = ["..."]
+\end{kennelcode}
+
+\begin{description}
+\tightlist
+\item[\texttt{broadcast}]
+optional. Signals the kennel may receive (a subset of senders it may
+\texttt{talk} to).
+\item[\texttt{call}]
+optional. Finer than \texttt{talk}: specific
+\texttt{destination=interface.member} calls.
+\item[\texttt{own}]
+optional. Names the kennel may own (be addressable as). Almost always
+empty.
+\item[\texttt{talk}]
+optional. Destinations the kennel may call methods on and receive
+replies/signals from
+\end{description}
+
+\hypertarget{env}{%
+\section{\texorpdfstring{\texttt{{[}env{]}}}{{[}env{]}}}\label{env}}
+
+\texttt{{[}env{]}}: environment curation.
+
+\begin{kennelcode}
+[env]
+# optional
+deny     = ["..."]
+pass     = ["..."]
+set      = "..."
+\end{kennelcode}
+
+\begin{description}
+\tightlist
+\item[\texttt{deny}]
+optional. Variables denied even if passed (globs allowed).
+\item[\texttt{pass}]
+optional. Variables passed through from the caller's environment (globs
+allowed).
+\item[\texttt{set}]
+optional. Variables forced to a specific value. Declared last: as a TOML
+table it must
+\end{description}
+
+Example, from \texttt{toml/templates/base-bwrap}:
+
+\begin{kennelcode}
+[env]
+set = { TMPDIR = "/tmp", NO_PROXY = "" }
+\end{kennelcode}
+
+\hypertarget{exec}{%
+\section{\texorpdfstring{\texttt{{[}exec{]}}}{{[}exec{]}}}\label{exec}}
+
+\texttt{{[}exec{]}}: what may be \texttt{execve}'d.
+
+\begin{kennelcode}
+[exec]
+# optional
+allow    = ["..."]
+deny     = ["..."]
+deny_setcap = true
+deny_setgid = true
+deny_setuid = true
+deny_writable = true
+path     = ["..."]
+shell    = "..."
+\end{kennelcode}
+
+\begin{description}
+\tightlist
+\item[\texttt{allow}]
+optional. Allowlisted binary paths (the execve allowlist). Execution is
+deny-by-default:
+\item[\texttt{deny}]
+optional. Denylisted absolute paths or globs.
+\item[\texttt{deny\_setcap}]
+optional. Refuse file-capability binaries (framework invariant).
+\item[\texttt{deny\_setgid}]
+optional. Refuse setgid binaries (framework invariant).
+\item[\texttt{deny\_setuid}]
+optional. Refuse setuid binaries at execve (framework invariant once
+resolved).
+\item[\texttt{deny\_writable}]
+optional. Refuse execution of files in writable paths (framework
+invariant).
+\item[\texttt{path}]
+optional. \texttt{PATH} search roots the resolver records for the
+workload's environment.
+\item[\texttt{shell}]
+optional. The kennel's login shell: the synthetic-\texttt{passwd}
+\texttt{pw\_shell} and
+\end{description}
+
+Example, from \texttt{toml/templates/argv-tool}:
+
+\begin{kennelcode}
+[exec]
+allow = ["/bin/echo", "/usr/bin/echo", "/bin/cat", "/usr/bin/cat", "/bin/true", "/usr/bin/true", "/bin/sh"]
+\end{kennelcode}
+
+\hypertarget{fs}{%
+\section{\texorpdfstring{\texttt{{[}fs{]}}}{{[}fs{]}}}\label{fs}}
+
+\texttt{{[}fs{]}} and its sub-tables.
+
+\begin{kennelcode}
+[fs]
+# optional
+deny     = ["..."]
+exclusive = ["..."]
+read     = ["..."]
+write    = ["..."]
+\end{kennelcode}
+
+Contains: \texttt{{[}fs.dev{]}}, \texttt{{[}fs.home{]}},
+\texttt{{[}fs.proc{]}}, \texttt{{[}fs.tmp{]}}.
+
+\begin{description}
+\tightlist
+\item[\texttt{deny}]
+optional. Categorical denies (belt-and-braces over the constructed
+view). Replace or increment
+\item[\texttt{exclusive}]
+optional. Writable paths bound \textbf{exclusively} (T2.8): while the
+kennel runs, \texttt{kenneld}
+\item[\texttt{read}]
+optional. Paths granted read (and directory traversal / execute).
+Replace (\texttt{read\ =\ {[}"…"{]}}) or
+\item[\texttt{write}]
+optional. Paths granted write. Replace or increment at the same key.
+\end{description}
+
+Example, from \texttt{toml/templates/argv-tool}:
+
+\begin{kennelcode}
+[fs]
+read = ["/usr/**", "/bin/**", "/lib/**", "/lib64/**"]
+\end{kennelcode}
+
+\hypertarget{fs.dev}{%
+\subsection{\texorpdfstring{\texttt{{[}fs.dev{]}}}{{[}fs.dev{]}}}\label{fs.dev}}
+
+\texttt{{[}fs.dev{]}}: the minimal \texttt{/dev}.
+
+\begin{kennelcode}
+[fs.dev]
+# optional
+allow    = ["..."]
+\end{kennelcode}
+
+Contains: \texttt{{[}{[}fs.dev.passthrough{]}{]}}.
+
+\begin{description}
+\tightlist
+\item[\texttt{allow}]
+optional. The trivial pseudo-device baseline bound into the kennel's
+\texttt{/dev} (\texttt{/dev/null},
+\end{description}
+
+\textbf{\texttt{{[}{[}fs.dev.passthrough{]}{]}}} entries (or
+\texttt{\{\ add,\ remove\ \}} increment), optional:
+
+\begin{description}
+\tightlist
+\item[\texttt{group}]
+optional. The owning group that gates access (e.g.~\texttt{dialout},
+\texttt{modem}, \texttt{dip}). Access is
+\item[\texttt{path}]
+optional. The device node, an absolute path under \texttt{/dev}
+(e.g.~\texttt{/dev/ttyUSB0},
+\item[\texttt{reason}]
+decoration. Why this device is exposed (required).
+\item[\texttt{threats}]
+decoration. Threat tags, required to carry an \texttt{exposed} tag
+(passthrough widens the
+\end{description}
+
+Example, from \texttt{toml/templates/base-bwrap}:
+
+\begin{kennelcode}
+[fs.dev]
+allow = [
+    "/dev/null", "/dev/zero", "/dev/random", "/dev/urandom",
+    "/dev/tty", "/dev/pts/**",
+]
+\end{kennelcode}
+
+\hypertarget{fs.home}{%
+\subsection{\texorpdfstring{\texttt{{[}fs.home{]}}}{{[}fs.home{]}}}\label{fs.home}}
+
+\texttt{{[}fs.home{]}}: the constructed \texttt{\$HOME} view.
+
+\begin{kennelcode}
+[fs.home]
+# optional
+persist  = ["..."]
+readonly = true
+shadow   = true
+\end{kennelcode}
+
+\begin{description}
+\tightlist
+\item[\texttt{persist}]
+optional. Home-relative paths that \textbf{persist} across runs. By
+default the
+\item[\texttt{readonly}]
+optional. Make the constructed \texttt{\$HOME} \textbf{read-only}
+(default: writable). The home root
+\item[\texttt{shadow}]
+optional. Whether \texttt{\$HOME} is shadowed by a constructed view
+(must be true once resolved).
+\end{description}
+
+Example, from \texttt{toml/templates/base-bwrap}:
+
+\begin{kennelcode}
+[fs.home]
+shadow = true
+\end{kennelcode}
+
+\hypertarget{fs.proc}{%
+\subsection{\texorpdfstring{\texttt{{[}fs.proc{]}}}{{[}fs.proc{]}}}\label{fs.proc}}
+
+\texttt{{[}fs.proc{]}}: procfs hidepid.
+
+\begin{kennelcode}
+[fs.proc]
+# optional
+hidepid  = true
+\end{kennelcode}
+
+\begin{description}
+\tightlist
+\item[\texttt{hidepid}]
+optional. Mount \texttt{/proc} with \texttt{hidepid=2}.
+\end{description}
+
+Example, from \texttt{toml/templates/base-bwrap}:
+
+\begin{kennelcode}
+[fs.proc]
+hidepid = true
+\end{kennelcode}
+
+\hypertarget{fs.tmp}{%
+\subsection{\texorpdfstring{\texttt{{[}fs.tmp{]}}}{{[}fs.tmp{]}}}\label{fs.tmp}}
+
+\texttt{{[}fs.tmp{]}}: the private \texttt{/tmp} tmpfs.
+
+\begin{kennelcode}
+[fs.tmp]
+# optional
+size     = "..."
+writable = true
+\end{kennelcode}
+
+\begin{description}
+\tightlist
+\item[\texttt{size}]
+optional. Size cap in human form (\texttt{"512M"}, \texttt{"1G"}).
+\item[\texttt{writable}]
+optional. Whether the workload may \textbf{write} to its \texttt{/tmp}
+tmpfs (the Landlock write grant). Absent ⇒
+\end{description}
+
+Example, from \texttt{toml/templates/base-bwrap}:
+
+\begin{kennelcode}
+[fs.tmp]
+writable = true
+size = "512M"
+\end{kennelcode}
+
+\hypertarget{identity}{%
+\section{\texorpdfstring{\texttt{{[}identity{]}}}{{[}identity{]}}}\label{identity}}
+
+\texttt{{[}identity{]}}: the workload's identity inside the kennel.
+
+\begin{kennelcode}
+[identity]
+# optional
+group    = "..."
+groups   = ["..."]
+user     = "..."
+\end{kennelcode}
+
+\begin{description}
+\tightlist
+\item[\texttt{group}]
+optional. The workload's masked \textbf{primary} group name (synthetic
+\texttt{/etc/passwd} \texttt{pw\_gid}
+\item[\texttt{groups}]
+optional. Supplementary group names to retain
+(e.g.~\texttt{{[}"dialout",\ "plugdev"{]}}). The user
+\item[\texttt{user}]
+optional. The workload's masked user name,
+\texttt{\$USER}/\texttt{\$LOGNAME} and the synthetic
+\end{description}
+
+\hypertarget{lifecycle}{%
+\section{\texorpdfstring{\texttt{{[}lifecycle{]}}}{{[}lifecycle{]}}}\label{lifecycle}}
+
+\texttt{{[}lifecycle{]}}: TTL and TTL action. \texttt{ttl} is the human
+form (\texttt{"8h"}); the
+
+\begin{kennelcode}
+[lifecycle]
+# optional
+ttl      = "..."
+ttl_action = "exit" | "warn" | "renew"
+\end{kennelcode}
+
+\begin{description}
+\tightlist
+\item[\texttt{ttl}]
+optional. Time-to-live in human form (\texttt{"8h"}, \texttt{"1h"},
+\texttt{"30m"}).
+\item[\texttt{ttl\_action}]
+optional. What to do at TTL expiry: \texttt{"exit"} (alias
+\texttt{"stop"}, the default) ends the One of \texttt{exit},
+\texttt{warn}, \texttt{renew}.
+\end{description}
+
+Example, from \texttt{toml/templates/argv-tool}:
+
+\begin{kennelcode}
+[lifecycle]
+ttl = "5m"
+ttl_action = "exit"
+\end{kennelcode}
+
+\hypertarget{mutable}{%
+\section{\texorpdfstring{\texttt{{[}{[}mutable{]}{]}}}{{[}{[}mutable{]}{]}}}\label{mutable}}
+
+One \texttt{{[}{[}mutable{]}{]}} manifest entry: a leaf field a spawn of
+this template may write.
+
+\begin{kennelcode}
+[[mutable]]
+# optional
+field    = "..."
+freeform = true
+from     = ["..."]
+match    = ["..."]
+max      = 0
+oneof    = ["..."]
+type     = "..."
+under    = "..."
+# decoration
+reason   = "..."
+\end{kennelcode}
+
+\begin{description}
+\tightlist
+\item[\texttt{field}]
+optional. The dotted leaf-field path this entry opens
+(\texttt{net.proxy.allow}, \texttt{rootfs.writable}, \texttt{fs.write}).
+\item[\texttt{freeform}]
+optional. Freeform bound: no shape at all, the loud last-resort footgun.
+Any value is accepted; a
+\item[\texttt{from}]
+optional. Pool bound: the fixed set a spawn may append values from.
+\item[\texttt{match}]
+optional. Pattern bound: the pre-baked net-destination shapes an open
+value must match
+\item[\texttt{max}]
+optional. Pool bound: the maximum number of appended entries.
+\item[\texttt{oneof}]
+optional. Oneof bound: the enumerated member list a spawn selects from.
+\item[\texttt{reason}]
+decoration. The justification a \texttt{freeform} variant requires (the
+loud rule).
+\item[\texttt{type}]
+optional. Predicate bound: the value type (currently \texttt{relpath}).
+\item[\texttt{under}]
+optional. Predicate bound: the root the value resolves under
+(\texttt{RESOLVE\_IN\_ROOT}, traversal-free).
+\end{description}
+
+Example, from \texttt{toml/templates/argv-tool}:
+
+\begin{kennelcode}
+[[mutable]]
+field = "workload.argv"
+freeform = true
+reason = "the caller chooses the command to run within the [exec].allow floor; the cage contains it"
+\end{kennelcode}
+
+\hypertarget{net}{%
+\section{\texorpdfstring{\texttt{{[}net{]}}}{{[}net{]}}}\label{net}}
+
+\texttt{{[}net{]}} and its sub-tables.
+
+\begin{kennelcode}
+[net]
+# optional
+mode     = "none" | "constrained" | "unconstrained" | "host"
+proxy_listen_v4_address = "..."
+proxy_listen_v6_address = "..."
+# decoration
+reason   = "..."
+\end{kennelcode}
+
+Contains: \texttt{{[}net.audit{]}}, \texttt{{[}net.bind{]}},
+\texttt{{[}net.bpf{]}}, \texttt{{[}net.ipv6{]}},
+\texttt{{[}net.proxy{]}}.
+
+\begin{description}
+\tightlist
+\item[\texttt{mode}]
+optional. Egress mode: \texttt{"none"} (own empty net-ns, no
+interfaces), \texttt{"constrained"} (own net-ns, One of \texttt{none},
+\texttt{constrained}, \texttt{unconstrained}, \texttt{host}.
+\item[\texttt{proxy\_listen\_v4\_address}]
+optional. IPv4 proxy listen address as \texttt{"offset:port"} within the
+kennel's subnet. A
+\item[\texttt{proxy\_listen\_v6\_address}]
+optional. IPv6 proxy listen address as \texttt{"offset:port"}.
+\item[\texttt{reason}]
+decoration. Required (non-empty) only when \texttt{mode\ =\ "host"}: the
+documented justification for
+\end{description}
+
+Example, from \texttt{toml/policies/interactive}:
+
+\begin{kennelcode}
+[net]
+mode = "host"
+reason = "an interactive human shell needs direct, unmediated egress (git/ssh/curl) on the host network stack"
+\end{kennelcode}
+
+\hypertarget{net.audit}{%
+\subsection{\texorpdfstring{\texttt{{[}net.audit{]}}}{{[}net.audit{]}}}\label{net.audit}}
+
+\texttt{{[}net.audit{]}}: per-kennel egress audit log.
+
+\begin{kennelcode}
+[net.audit]
+# optional
+level    = "summary" | "full"
+log_path = "..."
+\end{kennelcode}
+
+\begin{description}
+\tightlist
+\item[\texttt{level}]
+optional. Audit verbosity (\texttt{"summary"}, \texttt{"full"}). One of
+\texttt{summary}, \texttt{full}.
+\item[\texttt{log\_path}]
+optional. Where the per-kennel egress JSONL log is written.
+\end{description}
+
+Example, from \texttt{toml/templates/base-confined}:
+
+\begin{kennelcode}
+[net.audit]
+log_path = "~/.local/state/kennel/<kennel>/network.jsonl"
+level = "summary"
+\end{kennelcode}
+
+\hypertarget{net.bind}{%
+\subsection{\texorpdfstring{\texttt{{[}net.bind{]}}}{{[}net.bind{]}}}\label{net.bind}}
+
+\texttt{{[}net.bind{]}}: bind-address rewriting policy (the
+wildcard-rewrite knobs; the bind
+
+\begin{kennelcode}
+[net.bind]
+# optional
+allow_host_loopback_v4 = true
+allow_host_loopback_v6 = true
+allowed_ports = ["..."]
+in6addr_any_policy = "rewrite" | "deny"
+inaddr_any_policy = "rewrite" | "deny"
+min_port = 0
+\end{kennelcode}
+
+\begin{description}
+\tightlist
+\item[\texttt{allow\_host\_loopback\_v4}]
+optional. Whether binding the host IPv4 loopback is permitted.
+\item[\texttt{allow\_host\_loopback\_v6}]
+optional. Whether binding the host IPv6 loopback is permitted.
+\item[\texttt{allowed\_ports}]
+optional. Explicit allowlist of bindable ports. When non-empty, the
+workload may
+\item[\texttt{in6addr\_any\_policy}]
+optional. What to do with a wildcard IPv6 bind. One of \texttt{rewrite},
+\texttt{deny}.
+\item[\texttt{inaddr\_any\_policy}]
+optional. What to do with a wildcard IPv4 bind (\texttt{"rewrite"} /
+\texttt{"deny"}). One of \texttt{rewrite}, \texttt{deny}.
+\item[\texttt{min\_port}]
+optional. Lowest bindable port.
+\end{description}
+
+Example, from \texttt{toml/templates/base-confined}:
+
+\begin{kennelcode}
+[net.bind]
+inaddr_any_policy = "rewrite"
+in6addr_any_policy = "rewrite"
+allow_host_loopback_v4 = false
+allow_host_loopback_v6 = false
+min_port = 1024
+\end{kennelcode}
+
+\hypertarget{net.bpf}{%
+\subsection{\texorpdfstring{\texttt{{[}net.bpf{]}}}{{[}net.bpf{]}}}\label{net.bpf}}
+
+\texttt{{[}net.bpf{]}}: the kernel/syscall ACL (the cgroup
+\texttt{connect4/6} + \texttt{bind4/6} BPF and the
+
+\begin{kennelcode}
+[net.bpf]
+# optional
+deny_families = ["..."]
+families = ["..."]
+\end{kennelcode}
+
+Contains: \texttt{{[}net.bpf.bind{]}}, \texttt{{[}net.bpf.connect{]}}.
+
+\begin{description}
+\tightlist
+\item[\texttt{deny\_families}]
+optional. Denied socket families (\texttt{inet\_sock\_create} returns
+EPERM): \texttt{AF\_NETLINK}, \texttt{AF\_PACKET}, \ldots{}
+\item[\texttt{families}]
+optional. Permitted socket families (defence in depth;
+e.g.~\texttt{{[}"AF\_INET",\ "AF\_INET6",\ "AF\_UNIX"{]}}).
+\end{description}
+
+\hypertarget{net.bpf.bind}{%
+\subsubsection{\texorpdfstring{\texttt{{[}net.bpf.bind{]}}}{{[}net.bpf.bind{]}}}\label{net.bpf.bind}}
+
+\texttt{{[}net.bpf.bind{]}}: the inbound BIND ACL (cidr + ports,
+deny-first).
+
+Contains: \texttt{{[}{[}net.bpf.bind.allow{]}{]}},
+\texttt{{[}{[}net.bpf.bind.deny{]}{]}}.
+
+\textbf{\texttt{{[}{[}net.bpf.bind.allow{]}{]}}} entries (or
+\texttt{\{\ add,\ remove\ \}} increment), optional:
+
+\begin{description}
+\tightlist
+\item[\texttt{cidr}]
+optional. The CIDR (\texttt{"10.0.0.0/8"}, a bare address, or
+\texttt{"*"} = \texttt{0.0.0.0/0} + \texttt{::/0}).
+\item[\texttt{ports}]
+optional. Permitted ports (empty = any port).
+\item[\texttt{protocol}]
+optional. Transport protocol (\texttt{"tcp"}, \texttt{"udp"},
+\texttt{"any"}). One of \texttt{any}, \texttt{tcp}, \texttt{udp}.
+\item[\texttt{reason}]
+decoration. Why this rule exists (required).
+\item[\texttt{threats}]
+decoration. Threat tags.
+\end{description}
+
+\textbf{\texttt{{[}{[}net.bpf.bind.deny{]}{]}}} entries (or
+\texttt{\{\ add,\ remove\ \}} increment), optional:
+
+\begin{description}
+\tightlist
+\item[\texttt{cidr}]
+optional. The CIDR (\texttt{"10.0.0.0/8"}, a bare address, or
+\texttt{"*"} = \texttt{0.0.0.0/0} + \texttt{::/0}).
+\item[\texttt{ports}]
+optional. Permitted ports (empty = any port).
+\item[\texttt{protocol}]
+optional. Transport protocol (\texttt{"tcp"}, \texttt{"udp"},
+\texttt{"any"}). One of \texttt{any}, \texttt{tcp}, \texttt{udp}.
+\item[\texttt{reason}]
+decoration. Why this rule exists (required).
+\item[\texttt{threats}]
+decoration. Threat tags.
+\end{description}
+
+\hypertarget{net.ipv6}{%
+\subsection{\texorpdfstring{\texttt{{[}net.ipv6{]}}}{{[}net.ipv6{]}}}\label{net.ipv6}}
+
+\texttt{{[}net.ipv6{]}}: IPv6-specific options.
+
+\begin{kennelcode}
+[net.ipv6]
+# optional
+force_v6only = true
+\end{kennelcode}
+
+\begin{description}
+\tightlist
+\item[\texttt{force\_v6only}]
+optional. Force \texttt{IPV6\_V6ONLY=1} so a dual-stack socket cannot
+escape the v4 rewrite.
+\end{description}
+
+Example, from \texttt{toml/templates/base-confined}:
+
+\begin{kennelcode}
+[net.ipv6]
+force_v6only = true
+\end{kennelcode}
+
+\hypertarget{net.proxy}{%
+\subsection{\texorpdfstring{\texttt{{[}net.proxy{]}}}{{[}net.proxy{]}}}\label{net.proxy}}
+
+\texttt{{[}net.proxy{]}}: the user-space egress policy the per-kennel
+proxy enforces
+
+Contains: \texttt{{[}net.proxy.deny{]}},
+\texttt{{[}{[}net.proxy.allow{]}{]}}.
+
+\textbf{\texttt{{[}{[}net.proxy.allow{]}{]}}} entries (or
+\texttt{\{\ add,\ remove\ \}} increment), optional:
+
+\begin{description}
+\tightlist
+\item[\texttt{cidr}]
+optional. A CIDR destination, when the rule is by-address rather than
+by-name.
+\item[\texttt{name}]
+optional. The destination host (or dot-prefixed suffix). Mutually
+informative with \texttt{cidr}.
+\item[\texttt{ports}]
+optional. Permitted ports.
+\item[\texttt{protocol}]
+optional. Transport protocol (\texttt{"tcp"}, \texttt{"udp"},
+\texttt{"any"}). One of \texttt{any}, \texttt{tcp}, \texttt{udp}.
+\item[\texttt{reason}]
+decoration. Why this destination is permitted (required).
+\item[\texttt{threats}]
+decoration. Threat tags.
+\item[\texttt{tls}]
+optional. \texttt{tls.required} and friends.
+\end{description}
+
+\hypertarget{net.proxy.deny}{%
+\subsubsection{\texorpdfstring{\texttt{{[}net.proxy.deny{]}}}{{[}net.proxy.deny{]}}}\label{net.proxy.deny}}
+
+\texttt{{[}net.proxy.deny{]}}: the deny table: the non-removable
+\texttt{invariant} floor and the
+
+Contains: \texttt{{[}{[}net.proxy.deny.invariant{]}{]}},
+\texttt{{[}{[}net.proxy.deny.policy{]}{]}}.
+
+\textbf{\texttt{{[}{[}net.proxy.deny.invariant{]}{]}}} entries,
+optional:
+
+\begin{description}
+\tightlist
+\item[\texttt{cidr}]
+required. The denied CIDR (e.g.~\texttt{"169.254.169.254/32"}).
+\item[\texttt{reason}]
+decoration. Why the deny exists (required).
+\item[\texttt{threats}]
+decoration. Threat tags.
+\end{description}
+
+\textbf{\texttt{{[}{[}net.proxy.deny.policy{]}{]}}} entries (or
+\texttt{\{\ add,\ remove\ \}} increment), optional:
+
+\begin{description}
+\tightlist
+\item[\texttt{cidr}]
+required. The denied CIDR (e.g.~\texttt{"169.254.169.254/32"}).
+\item[\texttt{reason}]
+decoration. Why the deny exists (required).
+\item[\texttt{threats}]
+decoration. Threat tags.
+\end{description}
+
+\hypertarget{provides}{%
+\section{\texorpdfstring{\texttt{{[}{[}provides{]}{]}}}{{[}{[}provides{]}{]}}}\label{provides}}
+
+One \texttt{{[}{[}provides{]}{]}} entry, a capability this kennel offers
+over the mesh.
+
+\begin{kennelcode}
+[[provides]]
+# required
+name     = "..."
+shape    = "af-unix" | "dbus-name" | "binder-connector"
+# optional
+endpoint = "..."
+key      = "..."
+# decoration
+reason   = "..."
+\end{kennelcode}
+
+\begin{description}
+\tightlist
+\item[\texttt{endpoint}]
+optional. Where the capability is exposed, in the provider's own view.
+Optional: an omitted
+\item[\texttt{key}]
+optional. An optional private match token, never advertised in the
+catalogue.
+\item[\texttt{name}]
+required. The capability's public identifier, what the catalogue
+advertises. A reserved
+\item[\texttt{reason}]
+decoration. Why this capability is offered (required).
+\item[\texttt{shape}]
+required. The typed transport. One of \texttt{af-unix},
+\texttt{dbus-name}, \texttt{binder-connector}.
+\end{description}
+
+Example, from \texttt{toml/templates/dbus-broker}:
+
+\begin{kennelcode}
+[[provides]]
+name = "org.projectkennel.dbus-broker"
+shape = "binder-connector"
+endpoint = "/dev/binderfs-mesh/binder"
+reason = "kenneld pushes per-consumer ACCEPT_SESSION (bus + method filter) to the broker's control node on the mesh"
+\end{kennelcode}
+
+\hypertarget{rootfs}{%
+\section{\texorpdfstring{\texttt{{[}rootfs{]}}}{{[}rootfs{]}}}\label{rootfs}}
+
+\texttt{{[}rootfs{]}}: an OCI image unpacked as the kennel's root
+filesystem.
+
+\begin{kennelcode}
+[rootfs]
+# optional
+image    = "..."
+path     = "..."
+persistence = "discard" | "persist"
+readonly = ["..."]
+writable = ["..."]
+# decoration
+reason   = "..."
+\end{kennelcode}
+
+\begin{description}
+\tightlist
+\item[\texttt{image}]
+optional. The \texttt{image@sha256:…} the build pulled from; the runner
+refuses unless it equals the
+\item[\texttt{path}]
+optional. The unpacked image rootfs (the store entry's
+\texttt{rootfs/}).
+\item[\texttt{persistence}]
+optional. Rootfs persistence: \texttt{"discard"} (default) \textbar{}
+\texttt{"persist"}. \texttt{"persist"} is a One of \texttt{discard},
+\texttt{persist}.
+\item[\texttt{readonly}]
+optional. Closure-lock: rootfs paths Landlock denies writes to, the
+executable-closure
+\item[\texttt{reason}]
+decoration. Why this substrate is trusted (required; the substrate-trust
+waiver is loud).
+\item[\texttt{writable}]
+optional. Closure-lock holes: rootfs paths kept writable, carved back
+out of \texttt{readonly}
+\end{description}
+
+\hypertarget{seccomp}{%
+\section{\texorpdfstring{\texttt{{[}seccomp{]}}}{{[}seccomp{]}}}\label{seccomp}}
+
+\texttt{{[}seccomp{]}}: the seccomp filter (source carries a deny list;
+the resolver
+
+\begin{kennelcode}
+[seccomp]
+# optional
+allow    = ["..."]
+deny     = ["..."]
+profile  = "..."
+\end{kennelcode}
+
+\begin{description}
+\tightlist
+\item[\texttt{allow}]
+optional. Syscalls explicitly allowed.
+\item[\texttt{deny}]
+optional. Syscalls denied on top of the profile.
+\item[\texttt{profile}]
+optional. The baseline profile name (\texttt{"default"}).
+\end{description}
+
+Example, from \texttt{toml/templates/base-bwrap}:
+
+\begin{kennelcode}
+[seccomp]
+profile = "default"
+deny = [
+    "userfaultfd", "perf_event_open", "bpf",
+    "process_vm_readv", "process_vm_writev",
+    "kexec_load", "kexec_file_load",
+    "mount", "umount", "umount2", "pivot_root",
+    "swapon", "swapoff", "reboot",
+    "init_module", "finit_module", "delete_module",
+    "personality",
+]
+\end{kennelcode}
+
+\hypertarget{service}{%
+\section{\texorpdfstring{\texttt{{[}service{]}}}{{[}service{]}}}\label{service}}
+
+\texttt{{[}service{]}}: the supervision discipline for a service kennel.
+
+\begin{kennelcode}
+[service]
+# optional
+backoff  = "..."
+max_attempts = 0
+restart  = "always" | "on-failure" | "never"
+\end{kennelcode}
+
+\begin{description}
+\tightlist
+\item[\texttt{backoff}]
+optional. Initial delay before a restart in human form
+(\texttt{"500ms"}, \texttt{"2s"}, default \texttt{"500ms"}); doubles
+\item[\texttt{max\_attempts}]
+optional. Restarts within the crash-loop window before
+declared-but-failed (default \texttt{5}; must be ≥ 1).
+\item[\texttt{restart}]
+optional. Restart discipline: \texttt{always} / \texttt{on-failure}
+(default) / \texttt{never}. One of \texttt{always}, \texttt{on-failure},
+\texttt{never}.
+\end{description}
+
+Example, from \texttt{toml/templates/dbus-broker}:
+
+\begin{kennelcode}
+[service]
+restart = "on-failure"
+\end{kennelcode}
+
+\hypertarget{signature}{%
+\section{\texorpdfstring{\texttt{{[}signature{]}}}{{[}signature{]}}}\label{signature}}
+
+The \texttt{{[}signature{]}} envelope carried by a signed artefact.
+
+\begin{kennelcode}
+[signature]
+# required
+algorithm = "..."
+key_id   = "..."
+signature = "..."
+# optional
+signed_fields = ["..."]
+\end{kennelcode}
+
+\begin{description}
+\tightlist
+\item[\texttt{algorithm}]
+required. Signature algorithm. Must be \texttt{"sshsig"}
+({[}\texttt{SSHSIG\_ALGORITHM}{]}).
+\item[\texttt{key\_id}]
+required. Identifies the signing key in the trust store. The SSHSIG also
+embeds the
+\item[\texttt{signature}]
+required. The armored SSHSIG
+(\texttt{-\/-\/-\/-\/-BEGIN\ SSH\ SIGNATURE-\/-\/-\/-\/-} \ldots) over
+the canonical
+\item[\texttt{signed\_fields}]
+optional. The top-level fields the signature covers (every field except
+\end{description}
+
+Example, from \texttt{toml/policies/interactive}:
+
+\begin{kennelcode}
+[signature]
+algorithm = "sshsig"
+key_id = "kennel-maint-2026"
+signature = "-----BEGIN SSH SIGNATURE-----\nU1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgKWVn2EUqe+ju7quWQv7aY/ihwM\npBFaipL7vU2UVH85IAAAAbcG9saWN5LnYxQHByb2plY3RrZW5uZWwub3JnAAAAAAAAAAZz\naGE1MTIAAABTAAAAC3NzaC1lZDI1NTE5AAAAQO4+Qm6EihZIVrHHJHc5lYaTh22kJbwk+8\nYVUolVJ+bBxwFC1WisLKlFSZ4fXR916/2Lo8NXG0LCGg+pvSOcygQ=\n-----END SSH SIGNATURE-----\n"
+\end{kennelcode}
+
+\hypertarget{spawn}{%
+\section{\texorpdfstring{\texttt{{[}spawn{]}}}{{[}spawn{]}}}\label{spawn}}
+
+\texttt{{[}spawn{]}}: the delegated-instantiation grant.
+
+\begin{kennelcode}
+[spawn]
+# optional
+max_instances = 0
+# decoration
+reason   = "..."
+\end{kennelcode}
+
+Contains: \texttt{{[}{[}spawn.allow{]}{]}}.
+
+\begin{description}
+\tightlist
+\item[\texttt{max\_instances}]
+optional. Concurrent-instance ceiling across this grant's spawns, the
+fork-bomb bound.
+\item[\texttt{reason}]
+decoration. Why this delegation is extended (required; the spawn waiver
+is loud, validated at compile).
+\end{description}
+
+\textbf{\texttt{{[}{[}spawn.allow{]}{]}}} entries, optional:
+
+\begin{description}
+\tightlist
+\item[\texttt{mutable}]
+optional. Optional per-requester narrowing: the subset of the template's
+\texttt{{[}{[}mutable{]}{]}} manifest fields
+\item[\texttt{template}]
+optional. The trust-store template name (\texttt{net-fetch}).
+\end{description}
+
+\hypertarget{ssh}{%
+\section{\texorpdfstring{\texttt{{[}ssh{]}}}{{[}ssh{]}}}\label{ssh}}
+
+\texttt{{[}ssh{]}}: per-kennel SSH egress (source-only).
+
+\begin{kennelcode}
+[ssh]
+# optional
+allow_headless = true
+\end{kennelcode}
+
+Contains: \texttt{{[}{[}ssh.destinations{]}{]}}.
+
+\begin{description}
+\tightlist
+\item[\texttt{allow\_headless}]
+optional. Whether a granted key may be driven by a non-interactive (CI)
+kennel with no
+\end{description}
+
+\textbf{\texttt{{[}{[}ssh.destinations{]}{]}}} entries (or
+\texttt{\{\ add,\ remove\ \}} increment), optional:
+
+\begin{description}
+\tightlist
+\item[\texttt{dest}]
+optional. The SSH destination, in the form the host-side \texttt{ssh} is
+invoked with
+\item[\texttt{options}]
+optional. Host-side \texttt{ssh} invocation options for this
+destination, passed verbatim as argv
+\item[\texttt{reason}]
+decoration. Why this destination is granted (required).
+\item[\texttt{threats}]
+decoration. Threat tags.
+\end{description}
+
+\hypertarget{trust}{%
+\section{\texorpdfstring{\texttt{{[}trust{]}}}{{[}trust{]}}}\label{trust}}
+
+\texttt{{[}trust{]}}: the masked workspace manifest (T2.8).
+
+\begin{kennelcode}
+[trust]
+# optional
+manifest = true
+on_change = "warn" | "freeze" | "kill"
+\end{kennelcode}
+
+\begin{description}
+\tightlist
+\item[\texttt{manifest}]
+optional. Maintain a \texttt{.trust-manifest.json} at the root of every
+writable/persistent
+\item[\texttt{on\_change}]
+optional. What \texttt{kenneld} does when a watched trigger is mutated
+during the run: One of \texttt{warn}, \texttt{freeze}, \texttt{kill}.
+\end{description}
+
+\hypertarget{tty}{%
+\section{\texorpdfstring{\texttt{{[}tty{]}}}{{[}tty{]}}}\label{tty}}
+
+\texttt{{[}tty{]}}: terminal hardening for an interactive (PTY)
+workload.
+
+\begin{kennelcode}
+[tty]
+# optional
+filter_terminal_escapes = true
+\end{kennelcode}
+
+\begin{description}
+\tightlist
+\item[\texttt{filter\_terminal\_escapes}]
+optional. Filter the dangerous escape sequences a workload could write
+toward the
+\end{description}
+
+\hypertarget{unix}{%
+\section{\texorpdfstring{\texttt{{[}unix{]}}}{{[}unix{]}}}\label{unix}}
+
+\texttt{{[}unix{]}}: \texttt{AF\_UNIX} policy.
+
+\begin{kennelcode}
+[unix]
+# optional
+abstract = "deny" | "allow"
+\end{kennelcode}
+
+Contains: \texttt{{[}{[}unix.allow{]}{]}}.
+
+\begin{description}
+\tightlist
+\item[\texttt{abstract}]
+optional. Abstract-namespace socket disposition (\texttt{"deny"} /
+\texttt{"allow"}). One of \texttt{deny}, \texttt{allow}.
+\end{description}
+
+\textbf{\texttt{{[}{[}unix.allow{]}{]}}} entries (or
+\texttt{\{\ add,\ remove\ \}} increment), optional:
+
+\begin{description}
+\tightlist
+\item[\texttt{env}]
+optional. An environment variable to set to the shim path
+(e.g.~\texttt{SSH\_AUTH\_SOCK}).
+\item[\texttt{name}]
+optional. A logical name (e.g.~\texttt{"ssh-agent"}) for a per-kennel
+service instance.
+\item[\texttt{real}]
+optional. The real host socket path.
+\item[\texttt{reason}]
+decoration. Why this socket is granted (required).
+\item[\texttt{shim}]
+optional. The shim path the socket is bound at inside the kennel.
+\item[\texttt{threats}]
+decoration. Threat tags.
+\end{description}
+
+Example, from \texttt{toml/templates/dbus-broker}:
+
+\begin{kennelcode}
+[unix]
+\end{kennelcode}
+
+\hypertarget{unsafe}{%
+\section{\texorpdfstring{\texttt{{[}unsafe{]}}}{{[}unsafe{]}}}\label{unsafe}}
+
+\texttt{{[}unsafe{]}}: the advisory footgun umbrella.
+
+Contains: \texttt{{[}unsafe.ptrace{]}}, \texttt{{[}unsafe.signal{]}}.
+
+\hypertarget{unsafe.ptrace}{%
+\subsection{\texorpdfstring{\texttt{{[}unsafe.ptrace{]}}}{{[}unsafe.ptrace{]}}}\label{unsafe.ptrace}}
+
+\texttt{{[}unsafe.ptrace{]}}: ptrace across the kennel boundary (scoping
+from PID-ns + seccomp).
+
+\begin{kennelcode}
+[unsafe.ptrace]
+# optional
+allow_from = ["..."]
+allow_targets = ["..."]
+\end{kennelcode}
+
+\begin{description}
+\tightlist
+\item[\texttt{allow\_from}]
+optional. Permitted sources.
+\item[\texttt{allow\_targets}]
+optional. Permitted targets (\texttt{"self"}, \ldots).
+\end{description}
+
+\hypertarget{workload}{%
+\section{\texorpdfstring{\texttt{{[}workload{]}}}{{[}workload{]}}}\label{workload}}
+
+\texttt{{[}workload{]}}: the command the kennel runs, optionally pinned.
+
+\begin{kennelcode}
+[workload]
+# optional
+argv     = ["..."]
+cwd      = "..."
+pinned   = true
+sha256   = ["..."]
+\end{kennelcode}
+
+\begin{description}
+\tightlist
+\item[\texttt{argv}]
+optional. The command + args (\texttt{argv{[}0{]}} is the program).
+Absent ⇒ supplied at \texttt{kennel\ run}.
+\item[\texttt{cwd}]
+optional. Working directory inside the view (may carry a
+\texttt{\textasciitilde{}}/\texttt{\textless{}home\textgreater{}}
+placeholder).
+\item[\texttt{pinned}]
+optional. Refuse a CLI \texttt{-\/-} override of \texttt{argv} unless
+\texttt{-\/-force} (pin exactly what runs).
+\item[\texttt{sha256}]
+optional. Accepted lowercase-hex SHA-256 digests of the workload binary;
+the spawn verifies
+\end{description}
+
+Example, from \texttt{toml/policies/interactive}:
+
+\begin{kennelcode}
+[workload]
+argv = ["/bin/bash"]
+\end{kennelcode}
+
+\hypertarget{common-forms}{%
+\section{Common forms}\label{common-forms}}
+
+\textbf{Threat tags}: carried inline on any grant that can widen
+surface, as
+\texttt{threats\ =\ \{\ exposed\ =\ {[}...{]},\ mitigated\ =\ {[}...{]}\ \}}.
+
+\textbf{The increment}: any list field also accepts
+\texttt{{[}{[}\textless{}list\textgreater{}.add{]}{]}} /
+\texttt{{[}{[}\textless{}list\textgreater{}.remove{]}{]}}, folded over
+the inherited list at compile.

@@ -1,0 +1,255 @@
+\hypertarget{local-services}{%
+\chapter{7. Local services}\label{local-services}}
+
+A workstation's most sensitive services do not listen on the network.
+They listen locally, on sockets in the user's own session: the SSH and
+GPG agents holding the keys, the display server, the audio server, the
+session bus, the container daemon. These are the conveniences a desktop
+is built from, and a workload running as the user can reach every one of
+them.
+
+For almost all of them, reaching is enough. Connection is authorization.
+A workload that opens the SSH agent's socket can have the user's
+challenges signed and authenticate as the user to every host that trusts
+the key (\texttt{T3.7}); one that reaches the display server can read
+the clipboard and watch the keystrokes (\texttt{T2.6}); the Docker
+socket is, for practical purposes, root on the machine. There is no
+second step where the service asks whether this particular client was
+meant to have it. The socket is the authority, and under the default-uid
+model every one of the user's sockets is open to anything running as the
+user. The workload inherits the user's whole local session.
+
+So the boundary cannot sit inside the conversation, asking whether a
+given request to a service is allowed; by the time there is a
+conversation, the authority is already handed over. The boundary has to
+sit at the connection, and then, for the services where even an allowed
+connection hands over too much, reach past it. What follows is that
+progression: first making the connection a mediated thing at all, then
+the graded set of answers for connections that cannot simply be granted.
+
+\hypertarget{the-paths-then-the-connection}{%
+\section{7.1 The paths, then the
+connection}\label{the-paths-then-the-connection}}
+
+The obvious way to confine local sockets is to keep doing what the
+filesystem chapter did: build the workload a view with only the allowed
+sockets in it, and let the absent ones be absent. It is the wrong tool
+here, and the reason is worth stating, because it shapes what follows.
+
+A socket is not data at rest. A socket path that appears in the
+workload's world is not a fact it can read: it is an authority it can
+exercise, out of band, the moment it sees it. So a view that contains
+the allowed sockets still leaks: the workload reads its own grants off
+what is present, and a present socket is a connectable one whether or
+not the monitor was watching. The path model is brittle besides:
+services that come and go through a session, sockets the host addresses
+through rules the policy would have to mirror exactly, and names the
+system resolves to a live endpoint though they were never files (an
+abstract socket on one platform, a reserved DOS device name on another),
+neither of which a path scheme can name at all. Each is a seam. Together
+they say the filesystem is the wrong layer to hold this boundary.
+
+So absence is applied to the paths wholesale. No host socket path is
+present in the workload's world: not the forbidden ones, not the allowed
+ones, none. There is nothing in the view to enumerate, probe, or connect
+to behind the monitor's back, and where a name could reach an endpoint
+without being a file the workload still has no way to address it. The
+local surface is empty, the same way the network was.
+
+What the workload has instead of paths is the monitor. A workload that
+needs an allowed service asks for it by the name the policy gives it,
+and the monitor, if the policy allows it, opens the real connection on
+the host side and hands the connected channel back
+(\texttt{interpose-as-transaction}). The application connects the way it
+always has; the call becomes a request, and the request is answered or
+refused. Enforcement moves off the filesystem and onto the connection,
+where it can be checked the instant it is made and audited every time,
+and where a service that restarted or moved since the workload began is
+reconnected correctly, because the name is resolved fresh each time
+rather than pinned to a path that may have gone stale.
+
+\hypertarget{the-contract}{%
+\section{7.2 The contract}\label{the-contract}}
+
+The contract is default-deny, and the default holds by construction
+rather than by rule: a service the policy does not name cannot be named
+in a request, because the workload has no path to it and no handle on
+it: only the set of names the policy gave it. There is nothing to add a
+denylist to. The dangerous services (Docker, the system bus, the legacy
+X11 server) are not refused; they are simply never named, and a service
+that is never named is one the workload cannot ask for.
+
+Asking by name rather than by path buys more than tidiness. The name is
+the workload's only handle on the service: it has no path, no address,
+nothing but the word the policy gave it, and so what stands behind that
+word is the monitor's to choose. To the operator inspecting a kennel
+before it runs, the choice is laid bare: the names the workload will ask
+for, and what each one really reaches, side by side; the operator sees
+the topology the workload never does. To the workload there is only the
+name. Everything that follows is a different answer to one question:
+when the workload asks for a service by name, what does the monitor
+connect it to?
+
+\hypertarget{the-raw-channel}{%
+\section{7.3 The raw channel}\label{the-raw-channel}}
+
+The simplest answer is the real service, connected raw. The monitor
+opens the connection and hands over the channel, and from there it does
+not listen: it granted the connection, it does not police the protocol
+that runs across it (\texttt{mediate-use-not-reach}). A workload granted
+the audio server can do anything PipeWire allows (play, and also
+capture) and the monitor reads none of it.
+
+This is the same edge the network boundary has, in the same place. That
+a connection the policy forbids never opens is a safety property, and
+the monitor enforces it completely: the forbidden connection is a thing
+that, once it happens, cannot be called back, and the monitor sees that
+it does not happen. What is said over a connection the policy allowed is
+a different kind of thing (the use of the channel rather than the reach
+to it), and a monitor watching one exchange at a time cannot bound it
+{[}Schneider{]}. So a raw grant is a raw grant of whatever authority the
+protocol confers: no more than was asked for, but no less.
+
+Where the protocol's whole authority is what the operator meant to
+grant, that is the right answer and the end of it. The audio server is
+audio; granting it grants playing and capturing sound, which is what
+audio access is. The answers that follow are for the services where the
+protocol's whole authority is far more than anyone meant to hand across
+in one piece.
+
+\hypertarget{the-facade}{%
+\section{7.4 The facade}\label{the-facade}}
+
+The session bus is the clearest of those. A connection to D-Bus is a
+connection to everything on it: the notification service, the secret
+store, the network settings, the power controls: the desktop's whole
+cast of services, reachable through a single socket. Handed the bus raw,
+a workload has them all; connection is authorization, and here the
+authorization is the session entire.
+
+But the bus is not an opaque stream the way a signing agent's socket is.
+It is structured (what travels on it is messages, calls to named
+services and named methods), and structure is something a boundary can
+hold. So where the bus cannot be handed over whole, it is not handed
+over raw.
+
+What the workload is given instead is a facade: something inside its own
+kennel that wears the shape it expects (a socket that looks and answers
+like the bus it meant to reach), so the application speaks to it
+unaltered. The facade decides nothing. Its whole job is to present the
+right face and carry what the workload sends across the kennel's IPC
+surface to the other side, where the deciding happens: a separate
+service kennel, or the host context, a place the workload has no handle
+on. There the messages are parsed and policed, and only the calls the
+policy named go on to the real bus. A workload granted the notification
+service can post a notification; the message crosses to an enforcer it
+cannot reach back into, and every call it was not granted stops there.
+
+This is the shape of every brokered service, thrown into relief by the
+danger of this one. The side facing the workload is only ever
+presentation; the side that decides is always across the boundary,
+beyond the workload's touch, which is what makes the deciding
+trustworthy, because an enforcer the workload cannot reach is one it
+cannot turn. It is also what keeps the trusted core small. Policing
+D-Bus means understanding D-Bus, and understanding a protocol is a great
+deal of code, exactly what a reference monitor is meant not to
+accumulate. So it accumulates nowhere near the monitor: the protocol
+logic lives in a confined service of its own, on the far side of the IPC
+surface from the workload it guards against, and the monitor brokers the
+connection and reads none of what crosses it
+(\texttt{control-not-data-plane}). The workload faces a mask, and the
+work goes on somewhere it cannot follow.
+
+\hypertarget{the-private-instance}{%
+\section{7.5 The private instance}\label{the-private-instance}}
+
+Some services cannot be filtered into safety, because there is no clean
+subset of the protocol to allow; and they cannot be handed over raw,
+because raw is catastrophic; yet the workload has a real need the
+service answers. The display is the standard case. A workload may
+legitimately need to put a window on the screen; a connection to the
+user's display server lets it read the clipboard, log every keystroke,
+and capture the screen of every other window (\texttt{T2.6}). The
+protocol is not a handful of discrete privileged calls to allowlist one
+of; it is a continuous compositing relationship, with no message-level
+line through it that leaves something both safe and useful.
+
+So the design neither filters nor refuses. It substitutes. The workload
+is given a display server of its own (a private, nested instance) and
+composes into that. It draws its windows, receives the input meant for
+it, and behaves exactly as it would against the real one, because as far
+as it can tell it is talking to an ordinary display server. What it
+cannot do is reach another window's input or output, because in its own
+server there are no other windows. The user's real display is never
+connected; the private instance stands on the far side of the boundary,
+in its own confinement like every brokered service before it, so the
+blast radius of a compromise is that instance and nothing past it.
+
+The private instance is the answer; a raw connection to the real display
+is the residual the answer exists to avoid, and it is worth naming,
+because an operator can still ask for it. On Wayland, built with client
+separation in mind, a raw connection to the real compositor still
+carries the clipboard and the screen until a message-filtering facade
+for it lands, so where a private instance is not in place that grant is
+a real grant of that reach. On X11 it is past a residual. X11 has no
+notion of one client kept from another; any client reads any other's
+input and screen as a matter of protocol. There is nothing to filter and
+nothing to contain, and a workload handed the user's real X server is
+handed the whole session's eyes and ears. Granting it is equivalent to
+turning the boundary off, and a workload that needs it is operating
+outside the model.
+
+\hypertarget{what-is-not-brokered}{%
+\section{7.6 What is not brokered}\label{what-is-not-brokered}}
+
+The last answer is no answer at all: the service is not brokered into
+the kennel by any of the three routes. It is right for exactly one kind
+of service: the one where there is no safe subset to filter, no useful
+private instance to substitute, and raw access is the user's identity
+itself.
+
+The SSH and GPG agents are that kind. A socket to a signing agent is the
+standing authority to authenticate as the user: to sign whatever
+challenge is put to it, with no attestation of what is being signed or
+to whom, no second check that the asker was meant to ask, and in some
+protocols a path to the key material behind it. There is no safe subset
+of ``sign this'' the framework could \emph{mediate}: a facade that
+parsed the agent protocol and passed selected requests would be vouching
+that a given signature is a legitimate one, which is a claim it has no
+ground to make, and bounding which key the agent uses does not bound
+what that signature then authenticates. And there is no useful private
+instance, because the value of the agent is precisely the user's real
+keys: a private agent holding none is just an absent one.
+
+So the framework builds no signing facade: it will not stand a mediated
+service in front of an agent and vouch for what crosses it. This is a
+bound on what the framework constructs, not on what the operator may
+reach. The raw channel of §7.3 remains available for an agent socket as
+for any other, and an operator who writes that grant has connected the
+workload to the agent with the framework parsing nothing and vouching
+for nothing; it is a warned footgun the operator owns, loud and tagged,
+not a sanctioned path. What the framework refuses is to \emph{be} the
+thing that mediates the signing, never to let the operator express a raw
+connect. The legitimate need behind the SSH agent, a workload that must
+reach a host over SSH, is real, and it is met a better way than the raw
+socket: a credential bound to a single destination, with the real key
+kept on the host side and out of the kennel entirely. That is a boundary
+of its own shape, standing on the network rather than the socket, and it
+is the subject of the next chapter. The GPG case has no such
+re-originated form, for the reason the next chapter draws out: it is
+attestation, and attestation does not belong in confinement at all.
+
+The two limbs meet here the way they met at the network, and then
+interposition goes further than it did there. Absence takes the paths,
+so there is no service to reach except by asking. Interposition answers
+the asking, and because the workload's only handle is a name, the
+monitor is free in what it puts behind that name: the real service raw,
+a facade that filters it, a private instance that stands in for it, or
+nothing at all. Connection was the authorization, so the design made the
+connection the transaction, and then made the transaction answerable in
+whatever measure the service's danger demands. Each rung leaves a
+residual, named where it falls (the protocol's full authority where it
+is granted raw, the correctness of the enforcer behind a facade where it
+is filtered, the blast radius of the private instance where one stands
+in), and the service whose only honest answer was refusal is handed to
+the chapter that can give it one.

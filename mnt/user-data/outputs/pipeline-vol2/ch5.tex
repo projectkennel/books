@@ -1,0 +1,130 @@
+\hypertarget{the-command-surface}{%
+\chapter{5. The command surface}\label{the-command-surface}}
+
+Chapter 4 drew the line around the trusted base and noted how much sits
+outside it: the operator CLI, the compiler, the argument parser, the
+terminal filter. The command surface is that outside, the operator's
+whole interface to the system, and the fact that nearly all of it falls
+beyond the trusted line is the shape worth seeing. The entry point holds
+no authority, the wire to the daemon is small enough to read in a
+sitting, and the work that looks heavy, compiling and signing a policy,
+happens here, on the untrusted side, where a bug is the operator's
+problem and not the confinement's.
+
+\hypertarget{the-shim}{%
+\section{5.1 The shim}\label{the-shim}}
+
+The command a user or an agent types is \texttt{kennel}, and it is a
+13-line static binary that holds no authority and does no work of its
+own. It detects its context and execs the right execution unit,
+replacing itself: the host execution unit on the host, the in-cage
+spawn-requester inside a kennel. What makes it small is that the
+detection is not a check. The shim execs the host unit first,
+unconditionally; on the host that succeeds and the host unit takes over,
+and inside a kennel it fails, because the host unit is absent from the
+kennel's view and not in its \texttt{exec.allow}, so the shim falls
+through to the spawn unit. The failure to reach the host unit is the
+context signal (\texttt{construction-by-absence}).
+
+That the signal is a failure rather than a probe is what keeps the shim
+out of the security argument entirely. A wrong guess cannot reach host
+authority, because the thing a wrong guess would reach, the host unit,
+is unreachable from inside a kennel by construction, allowed nowhere and
+soon absent from every cage's view. The dispatch is therefore ergonomics
+and not a boundary: it decides which of two units runs, and the one that
+must not run from inside cannot be run from inside no matter what the
+shim does (\texttt{do-less}). One static artifact serves both sides, so
+there is nothing to install differently in a kennel than on the host.
+
+\hypertarget{outside-the-trusted-base}{%
+\section{5.2 Outside the trusted base}\label{outside-the-trusted-base}}
+
+The host execution unit is the operator CLI, its own crate, outside the
+daemon's trusted base. It links the control-wire types and nothing of
+the daemon's enforcement code, so the dependencies that come with an
+operator tool, an argument parser, a JSON reader for the trust manifest,
+the terminal-escape filter, stay out of the daemon's closure entirely.
+The protocol cannot drift between the two, because both the CLI and the
+daemon depend on the one control crate for the wire types: one
+definition, linked twice (\texttt{rule-of-1}).
+
+The CLI is stateless and splits cleanly in two. Some verbs contact the
+daemon over its control socket, the ones that start, attach to, stop, or
+list a running kennel. The rest operate only on local files and never
+open the socket at all: the whole policy group, the audit query, key
+generation, the trust-manifest review. This is the runtime-and-compiler
+split of chapter 4 seen from the operator's side. The compiler is the
+largest single thing the CLI carries, and it runs here, locally, turning
+a source policy into the signed settled artefact, while the daemon links
+none of it and only ever verifies the artefact's signature and acts on
+it. The heavy authoring work and the light enforcement work are on
+opposite sides of the trusted line, and the command surface is where the
+heavy side lives.
+
+\hypertarget{the-control-protocol}{%
+\section{5.3 The control protocol}\label{the-control-protocol}}
+
+The wire to the daemon is deliberately small. The socket is the user's
+own, mode 0600 under the runtime directory, and the first thing across
+it is a version handshake: the client sends its schema version and
+build, and the daemon answers compatible or, on a mismatch, drops the
+connection without reading a request. A schema skew is refused before
+any request body or policy is parsed, so a client and a daemon that
+disagree about the protocol never get far enough to misread each other
+(\texttt{refuse-to-start}).
+
+The request and reply bodies are fixed-layout struct messages, each a
+leading op or tag byte followed by primitively encoded fields. There is
+no JSON, no request identifier, and no method-name string: the op byte
+is the method selector. Integers are native-endian, strings and lists
+are length-prefixed and bounded, a string at 64 kilobytes and a list at
+4,096 elements, and UTF-8 is validated on decode. The verbs are few,
+start a kennel, stop one, list them, and answer the SSH bastion's
+authorized-keys query, and their replies as few. An error is a
+first-class reply carrying a message, not a coded catalogue to keep in
+sync; a malformed frame, an unknown op or a truncated, oversized, or
+non-UTF-8 field, is refused at decode and closes the connection. A wire
+this narrow, with every field bounded and the selector a single byte, is
+one whose decoder makes most malformed input unrepresentable rather than
+handled (\texttt{make-invalid-unrepresentable}).
+
+What the protocol does not carry is the workload's bytes. The standard
+streams travel as descriptors, passed alongside the start frame as
+ancillary data, not copied through the daemon: a non-interactive run
+hands over its three stdio descriptors and the workload is attached to
+them directly. An interactive run hands over a single socket, and the
+spawn seal allocates a controlling pty inside the kennel's own devpts,
+so the workload has real job control and the operator's own terminal is
+never exposed to it. The daemon's broker holds the pty master and
+proxies it, the CLI raw-modes the terminal and proxies bytes both ways,
+and the filtering of dangerous terminal escapes in the workload's output
+runs in the CLI, on the bytes' way to the real terminal, so the parser
+of workload-controlled output never executes in the daemon
+(\texttt{control-not-data-plane}). The daemon decides and routes; the
+bytes flow past it.
+
+\hypertarget{the-verbs}{%
+\section{5.4 The verbs}\label{the-verbs}}
+
+The surface above the wire is a small set of verbs dispatched on the
+first argument, each parsing its own flags, with the command list
+rendered from an in-binary table so the help cannot drift from what
+exists. The lifecycle verbs are the ones that reach the daemon:
+\texttt{run} starts a kennel from a policy and runs a workload in it,
+foreground and, when interactive, detachable; \texttt{attach} reconnects
+a terminal to a running one; \texttt{stop} and \texttt{list} do as they
+say. A \texttt{run} from a pre-compiled settled policy needs no key,
+because the daemon verifies the artefact's signature against its trust
+store; only a run straight from source compiles and signs in memory and
+so needs a signing key.
+
+Everything else is local. The policy group is the authoring surface,
+compiling, validating, signing, linting, diffing, evaluating a policy
+against the threat catalogue, and re-pinning a template to a newer
+version, all on files, none touching the daemon. \texttt{keygen} makes a
+signing key, \texttt{audit} queries a kennel's recorded account, and
+\texttt{review} re-pins a workspace's trust manifest, the deliberate
+operator act the run path will not perform as a side effect (T2.8). The
+weight of the command surface is here, in authoring and inspection, on
+the untrusted side of the line, which is the point: the operator's tool
+is rich and the trusted base it drives is not.

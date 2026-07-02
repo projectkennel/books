@@ -1,0 +1,245 @@
+# Project Kennel: Design Principles
+
+These are the axioms the design and architecture derive from, sorted in four small categories:
+Premise, System, Architecture and Boundaries. They state posture, not mechanism.
+
+Every structural choice in the framework answers to one or more of them; these are cited throughout
+to justify the mechanisms that realise them.
+
+## Premise
+
+### `good-boy`
+
+"Good boy" is praise for intention, and the principle is that intention is not what the boundary
+judges. The name describes a disposition — loyal, well-meaning, eager to please — and a
+disposition is the one thing confinement refuses to consult. What a workload intends and what it
+does are different things, and the boundary answers only to the second; to confine by intention is
+to confuse the dog's character with the state of the couch. The framework never asks whether a
+workload means well, because meaning well is not what bounds the damage.
+
+A boundary that holds only for the workloads you correctly judged untrustworthy fails the moment
+the judgment is off — and the judgment is always eventually off. The insider was fine until they
+weren't; the allowlisted dependency shipped clean releases until the one that wasn't; the agent
+was loyal until a docstring in the repo redirected it. Kennel takes the judgment out of the loop.
+The living room is protected from any dog, so you are never breached by having misjudged one.
+
+What a workload can reach and do is the whole of the damage; what it meant changes nothing. An AI
+agent reading every file "in case something is useful" and a credential-harvesting postinstall
+script perform the same reads and leave the same hole, and the boundary treats them identically
+because intent does not move the blast radius. The dog loves you and wrecks the couch anyway. You
+do not crate it as a verdict on its character; you keep the couch safe from whatever the dog turns
+out to be. This is why the project is confinement and not detection — you are never required to be
+right about the workload, and so being wrong about it is not a breach.
+
+### `split-the-uid`
+
+Unix fuses who you are with what you may do. The uid is both your identity and your authority —
+your shell, your editor, your compiler are you, and reach everything you reach by the number
+alone. That fusion was sound while the only code running as you was code acting for you, and it is
+what broke when the code became an agent, a postinstall script, a freshly cloned build: still your
+uid, no longer you.
+
+Kennel does not answer this by giving the workload a different identity. It keeps the user's uid —
+deliberately, because a separate identity would demand the delegated id-ranges and privilege the
+framework is built to do without — and splits the authority off the identity instead. The uid
+stays; the ambient reach it would have carried does not. In its place the framework defines the
+context the uid runs in, the view and the channels and the signed policy, so the workload holds
+not the user's inherited authority but exactly the authority the operator declared. Identity and
+authority, fused by Unix, come apart into two contexts under one uid — the default, where
+authority is ambient and total, and the kennel, where it is explicit and bounded. Without the
+split the monitor has nothing to mediate, since an un-split uid carries its ambient authority
+straight through any policy laid over it.
+
+### `do-less`
+
+Confronted with a workload whose intent it will not judge and whose authority it has had to strip,
+the framework's founding instinct is to do as little as possible. Every line of mediation is a line
+that can be wrong; every component is a thing that must be trusted and read; every active mechanism
+is a surface an adversary can work against. So the question asked of each part of the design is not
+"how do we do this well" but "can we avoid having to do it at all" — and the strongest answer to how
+a thing is secured is usually that the thing is not there to secure. This is the keystone, and most
+of the architecture is its consequences. `construction-by-absence` is do-less carried to its limit
+against a resource — remove it, and there is nothing left to get right. `control-not-data-plane` is
+do-less on the byte path, the monitor absent from the flow it authorises. `rule-of-1` is do-less
+inside each component, which carries one hazard rather than three. The reference monitor is
+verifiable, Anderson's third property, because a monitor that does less is small enough to read in
+full. The framework grows only by necessity argued in the open, and the answer that removes a thing
+is worth more than the answer that improves it.
+
+## System
+
+### `reference-monitor`
+
+A confinement system is a reference monitor or it is scenery. Anderson named the three properties
+such a monitor must hold: it mediates every access to a protected resource and cannot be bypassed;
+the code it constrains cannot alter it, nor can any policy it loads lower the floor it guarantees,
+however that policy was signed; and it is small enough to be analysed for correctness.
+These are one test to pass, not three features to collect — a monitor that meets two and misses
+the third does not confine. The host level grew such a monitor over decades, in mandatory access
+control, the LSM framework, and systemd's syscall and address-family filters; the user level,
+where the workloads that now matter actually run, never did. Kennel is that monitor, assembled
+from existing kernel primitives and run in user space, where every access passes through it, the
+workload it confines can neither bypass nor alter it, and it is kept small enough to read in full.
+Its three properties organise the register: complete mediation is reached two ways, by
+`construction-by-absence` and `interpose-as-transaction`; tamperproofing is why the enforcer is never
+placed inside the thing it confines, and why it re-asserts its own invariants at every spawn whoever
+signed the policy, since a monitor that could be signed out of its guarantees would cut the floor from
+beneath its own feet; and verifiability is `do-less` made a requirement, with
+`rule-of-1` and `control-not-data-plane` its sharpest applications. `refuse-to-start` is what keeps
+a degraded monitor from passing as one.
+
+### `mediate-use-not-reach`
+
+Kernel access control answers one question — may this channel be opened — and then stands down. It
+never sees the method call on the bus it allowed, the destination behind the socket it permitted,
+the secret read through the file it granted. The platform conceded this long ago and patched
+around it one protocol at a time: dbus-daemon filters individual method calls, polkit gates
+privileged actions, ssh forced commands and git-shell constrain a single connection's use. Each
+exists because the channel was the wrong granularity. A sandbox that confines by reachability
+inherits the same ceiling — once a socket or a path is present in the workload's world, what the
+workload does through it is ungoverned. Kennel mediates the use rather than the reach. The content
+of the interaction is what policy decides, and a granted channel is the start of mediation, not
+the end of it — a monitor that stopped at the channel it allowed would be `reference-monitor` in
+name only.
+
+The principle is the design's default and not an absolute. One rung is deliberately exempt: where a
+protocol's whole authority is exactly what the operator meant to grant, the channel may be handed over
+raw, mediation ending at the connection because there is no smaller unit of use worth governing. That
+exemption is per-service and operator-declared, loud and threat-tagged, never the silent default — the
+law is mediate the use, and the raw grant is the named place the operator chooses to stop at the reach
+and own what follows.
+
+### `construction-by-absence`
+
+Complete mediation (`reference-monitor`) is reached two ways. The first makes the resource absent,
+so there is no access to mediate. If a resource is not present to the workload, the count of
+accesses to it is zero and complete mediation holds with nothing to enforce. So Kennel does not
+hand the workload the real world and subtract — it constructs the workload's view of each resource
+class from nothing, admitting only what policy grants. The filesystem holds the granted paths and
+no others; an unreachable network is empty, not blocked; a withheld socket has
+no name in the workload's world to connect to. What is absent is not denied on access — it is not
+present, not deniable, not enumerable. A workload cannot probe for what is not there, cannot map
+the user's environment by reading the edges of its permissions, cannot tell a withheld resource
+from one that never existed. Three things follow that a denylist cannot offer: inspection is
+one-directional, since "what can the workload see" is the constructed view itself, with no
+everything-not-denied left to reason about; policy edits are positive, a grant adding to the view
+rather than a deny chasing what was forgotten; and the view is the boundary, so an authoring error
+is a visible inclusion, not an invisible omission. Absence is a stronger mediation than denial,
+because there is nothing left to attack — it is `do-less` carried to its limit, the resource
+removed rather than guarded.
+
+### `interpose-as-transaction`
+
+Some resources cannot be made absent — the workload genuinely needs to reach a service, a
+destination, a socket — and for these the first limb, `construction-by-absence`, has nothing to remove.
+The second way to complete mediation is interposition: the workload does not hold the resource, it
+holds a request for it, and every use becomes a transaction the monitor authorises one call at a
+time. A granted network destination is not an open socket the workload owns but a connect the
+monitor performs on its behalf and hands back; a granted service is not a path in the view but a
+brokered call decided per invocation. Because the decision and the action are a single authorised
+transaction, there is no window between checking a request and honouring it for the workload to
+widen — freedom from time-of-check/time-of-use races falls out of the structure rather than being
+guarded for. Which limb applies to a resource is a deliberate per-class choice: remove it where
+you can, interpose where you cannot, and complete mediation holds either way.
+
+## Architecture
+
+### `rule-of-1`
+
+A confinement system is defined by where it concentrates risk. The common heuristic is the Rule of
+2: a component should not combine more than two of three hazards — it parses untrusted input, it is
+written in a memory-unsafe language, or it runs with privilege. Kennel holds its trusted base to a
+stricter line, a Rule of 1, where no component carries more than one of the three at once. Where
+`do-less` removes components from the base, this keeps the survivors simple: the part that decodes
+a workload's bytes runs unprivileged and memory-safe; the part that holds privilege parses nothing
+a workload influenced, and parses it before any sandbox exists that could shape its input. The
+baseline language is safe Rust, and where `unsafe` is required to drive a kernel primitive — the
+syscalls and ioctls the sandbox is built from — it is quarantined into a component that neither
+holds privilege nor parses untrusted input. A bug in any one
+component is then bounded by that component's single hazard, never compounded into the
+untrusted-input-and-privilege-and-unsafe-memory combination from which escapes are built.
+
+### `control-not-data-plane`
+
+The monitor decides; it does not carry. When a workload is granted a channel, the daemon authorises
+and establishes the connection, then steps out of the byte path entirely — the established
+descriptor is handed to the facade, and the data flows without passing through the daemon again.
+This is a performance property, since steady-state I/O is never bottlenecked on a central mediator,
+but it is first a security one: a component that never sees a byte of workload traffic cannot be
+exploited by that traffic. Keeping the daemon on the control plane keeps adversarial input out of
+the most-trusted, most-reachable component in the system. This is `do-less` on the byte path — the
+monitor made absent from the flow it authorises rather than secured within it, the same removal
+`rule-of-1` makes inside each component. The monitor is in the loop for every decision and out of
+the loop for every byte.
+
+### `authentication-never-attestation`
+
+A kennel exists to run code the operator has chosen not to trust, and that choice has a hard edge:
+the workload may prove an identity, but it may never vouch as the operator. The distinction is
+between authentication and attestation. Authentication is host-verifiable and can be mediated — the
+framework can let a workload prove the user's identity to a specific destination while binding which
+destination, so the credential is used but never aimed by the workload. Attestation is the operator
+putting their name on data — a signed commit, a signed release, a gpg signature — and it cannot be
+delegated to an entity the operator does not trust, because there is no host-side safety property to
+bind it to: the signature is over content the workload authored, and a signature an untrusted
+workload can produce is the operator's identity stamped on whatever that workload chose. So the
+framework brokers authentication and refuses attestation outright. The human signs on review, after
+seeing what they are signing; the workload never holds the pen.
+
+## Boundaries
+
+### `request-dont-author`
+
+The workload asks; it does not write. Every capability a workload can exercise traces to a policy
+the operator signed, and the workload's role is to request what that policy already allows, never to
+author the policy itself or invent a capability the operator did not grant. This holds even where
+the workload supplies input to the decision — an agent that may spawn another kennel selects from
+within a signed template's declared bounds, filling fields the template opened, but the floor it
+spawns against is the operator's signature, not the agent's request. The separation is the whole
+point: an actor that could author its own grants would be confined by nothing, since the boundary
+would move wherever the workload pushed it. Consistent with `good-boy`, authority is never extended
+to a workload on the strength of trusting it, because trust is not a thing the framework weighs;
+request-don't-author keeps the boundary where the operator put it, and makes the workload's
+influence a choice among permitted options rather than a power to permit.
+
+### `footgun-warn-dont-forbid`
+
+The operator is the trust root, and a framework that forbids what the operator has legitimately
+decided to do is not protecting them — it is substituting its judgement for theirs and inviting them
+to route around it. So where a capability degrades security but is conceivably the right call — a
+media kennel that needs a mount service, a query to a connectivity daemon — the default-deny is
+overridable in a delta, with a loud warning and a threat tag that makes the deviation visible
+instead of silent. The cost is shown; the choice stays the operator's. The principle is bounded by
+its opposite, and the boundary is narrow: a small, named set of capabilities are refused outright
+rather than warned, because permitting them would be theatre — claiming confinement while handing
+over a signing oracle or a spawn escape that empties the claim. That is the same refusal
+`refuse-to-start` makes when the substrate cannot back a policy: warn for the footgun the operator
+might reasonably fire, but refuse the one whose only effect is to make the confinement a lie.
+
+### `tell-me-why`
+
+Every grant carries the reason it exists. A delta that adds a path, opens a destination, or removes a
+default is not accepted without a stated justification, and that justification travels with the grant
+wherever it goes: into the diff a reviewer reads, into the settled policy's provenance, into the audit
+record of the decision the grant authorised. A grant without a reason is one no one can review on the
+day it is written or understand six months later, and the framework refuses to accept one. The reason
+does not gate the grant; an operator with standing to make a change makes it. What the reason does is
+make the change accountable, so that a confinement stays legible to the people who must trust it rather
+than becoming a wall of permissions whose origins have been forgotten. Where `footgun-warn-dont-forbid`
+makes a security-degrading grant loud, this makes every grant answerable, the loud warning being the
+sharp end of a discipline that runs through all of them. A policy no one can read is a policy no one can
+review, and a confinement no one reviews drifts from the floor it started above.
+
+### `refuse-to-start`
+
+A policy is a claim about what a workload cannot do, and a claim the substrate cannot enforce is
+worse than no claim, because the operator believes it. If a kennel's policy needs a kernel mechanism
+the host does not provide — the network isolation, the execution gate, the socket policy a given
+grant depends on — Kennel refuses to start it rather than run it degraded and silent. A monitor that
+runs without the mechanism its policy depends on is precisely the scenery `reference-monitor` opens
+by warning against: present, plausible, and enforcing nothing. Silent degradation is the specific
+failure this forbids — a kennel that asked to block lateral movement and then ran without the
+mechanism that blocks it has not failed safe, it has lied to the operator while appearing to work.
+Failing closed turns an unenforceable policy into a visible error the operator must resolve, and
+restores the one property that makes a confinement claim worth anything: that when it says a thing
+is prevented, the thing is prevented.

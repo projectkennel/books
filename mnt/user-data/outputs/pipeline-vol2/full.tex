@@ -1,0 +1,75 @@
+\input{preamble}
+\begin{document}
+
+% ================= COVER =================
+\begingroup
+\thispagestyle{empty}
+\centering
+\vspace*{12mm}
+{\bfseries
+ {\fontsize{36}{40}\selectfont Project Kennel}\par
+ \vskip4mm
+ {\mdseries\itshape\fontsize{19}{22}\selectfont\color{accent} Volume 2}\par}
+\vskip12mm
+{\includegraphics[width=105mm]{kennelhero-vol2.jpg}\par}
+\vfill
+{\Large\itshape Mechanism and Construction\par}
+\vskip9mm
+{\large Remco van Mook\par}
+\vskip1mm
+{\itshape\color{accent}\large Schalkhaar, June 2026\par}
+\vspace*{18mm}
+\endgroup
+\clearpage
+
+% ================= FRONT MATTER =================
+\frontmatter
+\pagestyle{kennel}
+\chapter*{0.\ Reading guide}
+\markboth{Reading guide}{Reading guide}
+\input{ch0body.tex}
+\clearpage
+\tableofcontents*
+\clearpage
+
+% ================= BODY =================
+\mainmatter
+\pagenumbering{arabic}
+\setcounter{page}{1}
+\input{reg.tex}
+\bookpart{I}{The machinery}
+\input{ch1.tex}
+\input{ch2.tex}
+\input{ch3.tex}
+\input{ch4.tex}
+\input{ch5.tex}
+
+\bookpart{II}{The resource classes}
+\input{ch6.tex}
+\input{ch7.tex}
+\input{ch8.tex}
+\input{ch9.tex}
+\input{ch10.tex}
+\input{ch11.tex}
+\input{ch12.tex}
+
+\bookpart{III}{The interplay}
+\input{ch13.tex}
+\input{ch14.tex}
+\input{ch15.tex}
+
+\bookpart{IV}{The language and the tools}
+\input{ch16.tex}
+\input{ch17.tex}
+\input{ch18.tex}
+\input{ch19.tex}
+
+\bookpart{V}{Policy reference}
+\input{ch20.tex}
+\input{ch21.tex}
+
+% ================= BACK MATTER =================
+\backmatter
+\input{refs.tex}
+
+\end{document}

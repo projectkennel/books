@@ -1,0 +1,176 @@
+\hypertarget{filesystem}{%
+\chapter{4. Filesystem}\label{filesystem}}
+
+The filesystem is the widest surface the workload touches. The user's
+keys, tokens, browser state, shell history, configuration, and work in
+progress all live on it, and under the default-uid model a workload
+running as the user reaches every byte. A path not meant for the
+workload is only a path it has not read yet.
+
+Of the two limbs, the filesystem yields almost entirely to the first.
+Most of what a workload must be kept from is data it has no reason to
+touch, and the surest way to keep it from that data is for the data not
+to be in its world at all (\texttt{do-less}). So the filesystem is
+\texttt{construction-by-absence} worked to its edges: not a filter that
+checks each read against a list of the forbidden, but a world built so
+the forbidden is not there to read.
+
+\hypertarget{the-empty-world}{%
+\section{4.1 The empty world}\label{the-empty-world}}
+
+The framework builds the workload an empty world and places into it
+exactly what the policy grants. It does not hand over the user's home
+and then block the parts that should stay hidden; what the policy does
+not grant is not forbidden, it is missing.
+
+The difference is not cosmetic, and it shows up most clearly against
+reconnaissance. A guard over the user's home leaks the home's shape: a
+workload that asks for a secret and is refused has learned the secret is
+there to be refused. An agent mapping the environment for credentials
+and history (\texttt{T1.1}), or a post-install script reaching for a key
+ring (\texttt{T1.2}), can read the topology of the user's life off the
+pattern of what it is allowed to open. Refusal is an answer. Absence is
+silence. In the workload's world the sensitive directories do not exist,
+so the agent meets no closed door: it meets nothing, and learns nothing,
+because there is nothing to learn.
+
+The boundary also costs nothing to hold. No monitor reads over the
+workload's shoulder; nothing is checked on each open. What the workload
+can reach was settled when its world was built, before it ran, and the
+operating system holds it there. Reachability is the shape of the world,
+not a decision remade on every access.
+
+\hypertarget{the-contract}{%
+\section{4.2 The contract}\label{the-contract}}
+
+The contract is default-deny, and the denial is structural rather than
+enforced: an empty policy yields an empty world. That world is still
+workable. The system's own shared files, the libraries and programs
+every process needs in order to run, are present and read-only, because
+they carry nothing of the user's; what is omitted is everything that
+does. A grant then adds back exactly one of two things: a path the
+workload may read and traverse, or a path it may write.
+
+The workload acts under the operator's own identity. It has to (a
+granted path is the operator's, and only the operator's identity opens
+it), but it acts with none of the authority that identity ordinarily
+carries. Its reach is reduced to the paths the policy names, and the
+rest of what the operator could touch is not fenced off; it is absent.
+This is the split the whole design turns on (\texttt{split-the-uid}):
+the identity kept, the authority pared back to the grant. Even the
+operator's name is pared away: the workload sees a generic, confined
+identity, not whose machine it is running on, so the question of whose
+data this is goes unanswered along with the data.
+
+Writing follows the same rule as reading: it lands where the policy
+grants it and nowhere else. The world is writable, but only the paths
+granted to persist outlive the workload; a file written anywhere else is
+gone when the workload ends. A confined workload cannot litter the host
+with leavings, and it cannot leave anything behind outside the
+directories it was told to work in. Its scratch space is its own: the
+host's shared temporary area, with other sessions' intermediate files
+and other users' leavings, is absent, replaced by a private space
+destroyed along with the workload.
+
+One thing a filesystem grant is not is a grant of hardware. A device is
+not a path, whatever it looks like in a directory listing; handing a
+workload raw memory or a disk is handing it the machine, not a file, and
+the filesystem policy will not do it. Hardware stays below this boundary
+and is answered on its own terms.
+
+\hypertarget{absence-at-finer-grain}{%
+\section{4.3 Absence at finer grain}\label{absence-at-finer-grain}}
+
+Some files cannot be removed, because the workload needs them. A package
+tool needs the configuration that tells it where to find its registries;
+a version-control client needs the user's global settings. The trouble
+is that those same files often carry a secret a line or two from the
+setting: an auth token in the registry configuration, a credential
+helper in the version-control settings (\texttt{T1.1}). Removing the
+file breaks the tool. Handing it over whole leaks the secret.
+
+So absence goes finer. Where it cannot take the file, it takes the
+secret. A configuration the workload needs is placed in its world with
+the secret-bearing lines gone: the settings that make the tool work
+remain, and the credentials are simply not in the copy the workload
+reads. A secret that lives as its own file inside an otherwise-granted
+directory (an environment file, a key beside the code that uses it) is
+present but empty: there, so a program that expects it does not fall
+over, but holding nothing. An agent walking the project tree for an
+environment file finds it, opens it, and reads no password, because the
+password was never placed in the world it is reading.
+
+This is the same move as the empty world, one level down. Reconnaissance
+inside a granted directory comes back as empty-handed as reconnaissance
+outside one.
+
+\hypertarget{the-floor}{%
+\section{4.4 The floor}\label{the-floor}}
+
+All of this assumes the policy is written well. The design does not
+assume it.
+
+Beneath every policy sits a floor the policy cannot lower. A set of
+paths is categorically forbidden: the SSH and signing keys, the cloud
+credentials, the password store, the browser profiles, the system's own
+secret files, and they are forbidden before any grant is considered, not
+subtracted after. A policy that, through haste or a copied template,
+grants read access to the whole of the user's home still does not expose
+them, because the framework will not build a world in which they are
+reachable at all. Where a grant and the floor disagree, the floor wins.
+
+This is fail-safe defaults {[}SaltzerSchroeder{]} taken at its word: the
+safe outcome does not depend on the operator getting the policy right.
+The most sensitive data on the machine is absent by default and stays
+absent in spite of the policy, not because of it.
+
+The floor is also where the boundary is held a second time. The empty
+world removes the forbidden by construction, but construction can be
+probed: a path assembled through a traversal trick, a symbolic link
+aimed past the grant. So the same boundary is enforced twice over: the
+world is built without the forbidden in it, and the operating system
+independently refuses any read that resolves outside the granted paths.
+A workload that finds a seam in the first runs straight into the second.
+
+\hypertarget{the-trust-record}{%
+\section{4.5 The trust record}\label{the-trust-record}}
+
+There is one write the empty world does not contain on its own: a write
+to a file the operator will later run.
+
+A workload with write access to a project directory can change more than
+data. It can edit a build script, a task definition, a source-control
+hook: files that do nothing inside the kennel but execute with the
+operator's full, unconfined authority the next time the operator builds
+the project or commits to it. The confined workload plants the trap; the
+unconfined operator springs it (\texttt{T2.8}). The filesystem boundary
+does not catch this on its own, because the file sits inside a directory
+the workload was legitimately granted.
+
+The design answers it by recording, before the workload runs, a trusted
+baseline of every file in the workspace that can trigger execution: the
+scripts, the hooks, the task definitions. That baseline is the reference
+the operator will later judge the workload's changes against. For it to
+mean anything, the workload must not be able to forge it, and the
+workload has write access to the very directory the baseline describes.
+So absence is turned on the record itself. The baseline is absent from
+the workload's world: the workload can rewrite a build script, but it
+cannot see, read, or reconstruct the record of what that script was
+trusted to be. It can change the trigger. It cannot change the pin.
+
+When the workload finishes, the operator reviews. Host-side tooling,
+which holds the real baseline the workload never saw, compares the
+workspace's triggers against it and shows what moved. The operator
+accepts the changes, or has the triggers restored to their recorded
+state, erasing a planted payload before it can run. The workload's
+writes are held to data, and the path from a confined write to
+unconfined execution is cut.
+
+Across all of it the filesystem is the first limb and little else. There
+is no per-read broker and no transaction on each open, because none is
+needed: a resource that is absent needs no mediating, and the discipline
+of the chapter is to make as much absent as it can: whole subtrees, then
+single files, then the secret lines within a file, down to the record
+that guards the workload's own writes. What the workload cannot reach it
+cannot probe, and what it cannot see it cannot forge. The probe comes
+back empty because there is nothing to find.

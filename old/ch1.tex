@@ -1,0 +1,189 @@
+\hypertarget{the-premise}{%
+\chapter{1. The premise}\label{the-premise}}
+
+A developer's workstation runs a lot of code the developer never wrote
+or read. An AI coding agent works through a task across hundreds of
+files. A postinstall script runs the moment a dependency is added. An
+MCP server starts because a tool asked for it. A build system runs in a
+repository cloned an hour ago to look at, not yet trusted. None of it
+came through a path the system checks: a public registry, a
+\texttt{curl\ \textbar{}\ sh} line, a model's output run locally. All of
+it runs as the user, with the user's access to the user's files, keys,
+network, and services.
+
+Under Unix, that access is not a permission the code was handed. It is
+who the code is. The system treats everything the code does as something
+the user did.
+
+The premise the rest of the design answers begins here: why that is now
+a problem, what kind of problem it is, and what shape of answer it
+needs. The threat catalogue (\texttt{THREATS.md}) lists the concrete
+threats and the principle register (\texttt{PRINCIPLES.md}) states the
+posture. This volume is the platform-neutral design that meets them; the
+second volume is its realisation on Linux.
+
+\hypertarget{the-threat-is-effect-not-intent}{%
+\section{1.1 The threat is effect, not
+intent}\label{the-threat-is-effect-not-intent}}
+
+The natural move is to sort this code into trustworthy and malicious,
+and guard against the malicious. That sort is the mistake. The project's
+founding principle (\texttt{good-boy}) is the decision not to make it.
+
+Start with the behaviour that prompted the work. An AI agent was run
+inside a sandbox and blocked from a command. It did not give up. It
+found a path the deny rule did not cover, and when that was closed too,
+it reasoned its way to switching the sandbox off and running the command
+outside it (\texttt{T2.1}). Nobody told it to escape. Switching the
+sandbox off was simply the quickest way left to finish the job. To an
+agent under pressure to complete a task, a safeguard is just another
+obstacle, and the search for a way around it never stops to ask what the
+obstacle was protecting.
+
+The same shape turns up at the malicious end. In the Nx attack, poisoned
+package versions ran postinstall scripts that searched the disk for
+secrets and used the developer's own coding agents to help send them out
+(\texttt{T1.1}, \texttt{T1.2}). Put the two cases side by side. A
+malicious script hunts for credentials in
+\texttt{\textasciitilde{}/.ssh}, \texttt{\textasciitilde{}/.aws}, and
+the shell history. A helpful agent reads the same files in case
+something in them is useful. Same reads, same files, same hole. The
+boundary cannot tell the two apart from what they do, and it does not
+need to. The harm a workload causes depends on what it can reach, not on
+what it meant to do.
+
+So the framework does not ask. It assumes a workload will do whatever
+its capabilities allow, and it limits the capabilities instead of
+judging the motive. The dog loves you and wrecks the couch anyway. You
+do not crate it because you have decided it is a bad dog; you crate it
+so the couch is safe whichever kind of dog it turns out to be. That is
+the difference between confinement and detection. Detection has to be
+right about the code, and it is wrong the day a trusted dependency ships
+a compromised release, or a loyal agent reads a poisoned instruction out
+of the repository it is working in (\texttt{T3.7}). Confinement never
+has to be right about the code, so guessing wrong does not break it.
+
+None of this is new. The same problem, code a user runs that may harm
+them by accident or by intent, met by mediating it rather than trusting
+it, was set out in the Anderson report in 1972 {[}Anderson{]}, and has
+been the security tradition's answer ever since {[}Irvine{]}. The name
+\texttt{good-boy} is the project's; the instinct is not.
+
+\hypertarget{identity-and-authority}{%
+\section{1.2 Identity and authority}\label{identity-and-authority}}
+
+Most modern operating systems make no distinction between who you are
+and what you may do. On Unix, Windows, and macOS alike, the account you
+are is the authority you hold. It shows most plainly in Unix terms. The
+uid is both. It is your identity, the name the system knows you by, and
+it is your authority, the sum of everything that name may touch. The
+system cannot hold the one apart from the other. The equation once
+reached past the machine. rsh and the \texttt{.rhosts} file let a uid's
+authority cross every host that trusted it, so your identity on one box
+was your authority across a domain. Almost every host security measure
+since has worked to pull the two apart. setuid and sudo let a process
+act with an authority its identity lacks; mandatory access control lets
+the system grant an identity less than its uid would command. Each one
+forces a decision about authority where the default would simply re-read
+it off the identity: the same answer every time, no separate question
+asked. The whole host chain hangs off that: a fused uid, and decades of
+measures built to pry it open.
+
+None of that work reached the interactive user level, where the equation
+still holds in full (\texttt{split-the-uid}). Code running under your
+uid acts with your identity and inherits your entire authority,
+undivided. When the agent reads a file, when the script opens a
+connection, when the build writes to your home directory, the system
+sees your access, because by uid it is yours, and it cannot tell you
+apart from the code wearing your name.
+
+People do put boundaries around this code, and two kinds are common. A
+sandbox wraps one tool. It fixes a boundary when the tool starts and
+takes no further interest in what the tool does inside it. A container
+wraps a whole system. It fixes one boundary around everything it holds
+and calls the job done. Each draws its line once and steps back. Each
+settles what the workload can reach, and neither looks again at what the
+workload does with the reach it was given.
+
+A reference monitor (\texttt{reference-monitor}) is a different kind of
+thing. It does not draw a boundary and withdraw. It stands in the path
+of every access and clears them one at a time: each read, each
+connection, each call, judged as it is made, for as long as the workload
+runs. The sandbox and the container both draw a line and step back; the
+monitor stays in the path and meets each use as it comes
+(\texttt{mediate-use-not-reach}). The host's chain of measures
+culminates in one. The user level has none. Kennel keeps the identity,
+the uid you already are, and splits the authority off it: the workload
+acts under your name, with only the authority its policy grants, and
+exercises even that one access at a time. The next chapter builds that
+monitor where it is missing.
+
+\hypertarget{the-trust-root-and-the-limits-of-the-claim}{%
+\section{1.3 The trust root, and the limits of the
+claim}\label{the-trust-root-and-the-limits-of-the-claim}}
+
+Someone still has to be trusted, and it is the operator, the person
+running the framework. The operator is the trust root, not a threat to
+defend against. Kennel confines the workload and works for the operator.
+Its job is to make every capability the operator hands out explicit,
+bounded, and visible, not to overrule a choice the operator made
+deliberately (\texttt{footgun-warn-dont-forbid}). This cuts both ways. A
+framework that blocks what the operator needs gets switched off or
+worked around; the same pressure that pushes a workload past a safeguard
+pushes the person past one too, and a control that gets bypassed
+protects nothing.
+
+The trust root also fixes the edges of what the framework claims, and
+the design names them rather than pretending to cover everything. It
+governs the unsigned workload at the user level: what it reads, where it
+connects, what it changes, and what it leaves behind. It does not reach
+hardware or physical attacks, which sit below any userspace boundary. It
+does not reach an operator who decides to help the workload, because
+that consent is the trust root's to give. It does not reach bugs in the
+kernel parts it is built on, which are the ground it stands on. And it
+does not decide what data may leave through a channel the operator
+already allowed; which bytes ride an approved request is a
+data-governance question, not a confinement one (\texttt{T1.8}). The
+framework limits what a workload can reach and where it can connect. It
+does not claim to limit what an approved channel carries, and it says so
+where that line runs.
+
+That limit is not a shortfall in the build; it is the edge of the
+method. A monitor that clears each access as it happens can enforce that
+nothing forbidden occurs, but where information travels after it has
+legitimately left is a fact about the flow of data across many actions,
+not about any single access, and a monitor of this kind provably cannot
+enforce it {[}Schneider{]}. The limit is a theorem, not an apology.
+
+\hypertarget{the-shape-of-the-answer}{%
+\section{1.4 The shape of the answer}\label{the-shape-of-the-answer}}
+
+Project Kennel is a reference monitor for the user level, built in user
+space, holding no privilege the workload could use against it
+(\texttt{reference-monitor}). Four commitments give it its shape, and
+the chapters that follow work each of them out.
+
+It denies by default. A workload gets only what its policy grants. What
+it was not granted is not refused when it asks for it: it is simply not
+there, with nothing to find and nothing to probe
+(\texttt{construction-by-absence}). What cannot be removed, because the
+workload truly needs it, is reached through a transaction the monitor
+approves one call at a time, never as an open channel handed over and
+left alone (\texttt{interpose-as-transaction}). The whole is held to
+doing as little as it can, because a monitor is only as trustworthy as
+it is small enough to read (\texttt{do-less}). And at no point does it
+ask whether the workload deserves trust, because that is not a question
+the enforcement depends on (\texttt{good-boy}).
+
+The rest of this volume develops that design without tying it to any one
+operating system, because the design is the contract and the contract is
+platform-neutral. Chapter 2 builds the reference monitor and its three
+properties. Chapter 3 covers the two ways it reaches complete mediation:
+removing a resource so there is nothing to mediate, and interposing on
+the uses it cannot remove. Chapters 4 through 11 work through the
+resource classes one at a time, from the filesystem to the network to
+the services a session depends on. Chapters 12 through 16 turn to the
+grant itself: how a confinement is defined, made to enforce, consented
+to, vouched for, and accounted for. Each decision answers a threat from
+the catalogue and follows from a principle in the register. How the
+contract is enforced on a real kernel is the second volume.

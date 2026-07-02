@@ -1,0 +1,862 @@
+\hypertarget{worked-examples}{%
+\chapter{21. Worked examples}\label{worked-examples}}
+
+A single confined thing, followed from the floor to a running shell.
+Each tier is a real shipped file; the prose is the file's own. Read top
+to bottom and you watch confinement accrete: the floor denies, the
+template widens it four different ways, the leaf pins it.
+
+\hypertarget{base-confined-the-floor-every-kennel-stands-on}{%
+\section{\texorpdfstring{\texttt{base-confined} --- the floor every
+kennel stands
+on}{base-confined --- the floor every kennel stands on}}\label{base-confined-the-floor-every-kennel-stands-on}}
+
+Template: base-confined --- the floor every kennel stands on. Inherits:
+nothing --- this is the root of every confined template. Threat
+catalogue: THREATS.md v0.4
+
+The minimal confined posture: no\_new\_privs, setuid/setgid/setcap
+denial, the constructed-\$HOME view, proxy-only egress, the
+cloud-metadata + link-local invariant denies (RFC1918 stays reachable
+--- see {[}net{]}), a curated environment, and a defence-in-depth
+seccomp filter.
+
+Deny-by-default across the board: exec.allow is EMPTY, which now denies
+ALL execution (execution is deny-by-default like fs and net) --- so
+base-confined cannot run anything and is not usable on its own. A
+derived template/leaf adds the binaries it needs to \texttt{exec.allow};
+the compiler then resolves and grants exactly the shared libraries those
+binaries link (see the \texttt{{[}lib{]}} section below). Only enforced
+sections appear here; sections the runtime does not implement
+(dbus/x11/ptrace/signal) are deliberately omitted --- declaring them
+would warn.
+
+See docs/design/05-templates.md and templates/README.md.
+
+\begin{kennelcode}
+template_name = "base-confined"
+\end{kennelcode}
+
+\hypertarget{capabilities-framework-invariants}{%
+\subsection{Capabilities (framework
+invariants)}\label{capabilities-framework-invariants}}
+
+\begin{kennelcode}
+[cap]
+no_new_privs = true        # PR_SET_NO_NEW_PRIVS, always; cannot be set false
+bounding_set = []          # drop the entire capability bounding set
+\end{kennelcode}
+
+\hypertarget{execution-deny-by-default}{%
+\subsection{Execution
+(deny-by-default)}\label{execution-deny-by-default}}
+
+exec.allow is empty, which DENIES ALL EXECUTION: a merely-readable file
+is not executable. A derived template/leaf adds the binaries it needs;
+\texttt{permissive-exec} (a \texttt{**} entry) is the explicit opt-out
+that restores the open posture.
+
+There is intentionally NO exec.deny list: under deny-by-default it would
+be moot (sudo/su/pkexec/\ldots{} are not in any allowlist, so they never
+run; and the deny\_* flags below + no\_new\_privs neuter setuid
+escalation regardless). A deny list that enforces nothing is theatre, so
+it is omitted rather than shipped as reassurance.
+
+\begin{kennelcode}
+[exec]
+allow = []
+\end{kennelcode}
+
+\begin{kennelcode}
+deny_setuid = true         # refuse setuid binaries at execve (framework invariant)
+deny_setgid = true         # refuse setgid binaries (framework invariant)
+deny_setcap = true         # refuse file-capability binaries
+deny_writable = true       # refuse execution of files in writable paths
+\end{kennelcode}
+
+\begin{kennelcode}
+path = ["/usr/bin", "/usr/local/bin", "/bin"]
+\end{kennelcode}
+
+\hypertarget{filesystem}{%
+\subsection{Filesystem}\label{filesystem}}
+
+The constructed view (fs.home, below): \$HOME is a fresh tmpfs into
+which only granted paths are bound. Non-granted paths do not exist in
+the view (T1.1).
+
+\begin{kennelcode}
+[fs]
+# Read baseline: the curated base every dynamically-linked workload needs
+# (§4.2 construction-by-absence). Only these subtrees are bound into the
+# view; everything else under /usr (headers, source, /usr/local) is simply not
+# present. The filesystem floor prevents data leakage; the real enforcement is
+# at exec.allow|deny (Landlock FS_EXECUTE). Absent subtrees on this host (e.g.
+# /usr/lib64 on usrmerge distros, /usr/libexec on Debian) are silently skipped.
+read = [
+    # The curated /usr base:
+    "/usr/bin/**", "/usr/sbin/**",        # binary search path (Landlock gates exec)
+    "/usr/lib/**",                        # shared libraries, locale, multiarch
+    "/usr/lib64/**",                      # 64-bit lib path (Fedora/RHEL; skipped if absent)
+    "/usr/libexec/**",                    # helper binaries (git-core etc; skipped if absent)
+    "/usr/share/**",                      # arch-independent data (terminfo, zoneinfo, CAs, locale)
+    # usrmerge compat:
+    "/lib/**", "/lib64/**",
+    # TLS root CAs + linker config (not under /usr):
+    "/etc/ssl/**", "/etc/pki/**",
+    "/etc/ld.so.conf", "/etc/ld.so.conf.d/**", "/etc/ld.so.cache",
+    # update-alternatives symlink farm: many tools (awk→gawk, vi, editor, pager,
+    # java, …) are reached via /usr/bin/<tool> -> /etc/alternatives/<tool> -> real
+    # binary. Without /etc/alternatives in the view the symlink dangles and the tool
+    # is "command not found". It is non-sensitive (symlinks only), bound read-only.
+    "/etc/alternatives/**",
+    # The libc/NSS files are SYNTHESISED per-kennel (scrubbed of host specifics),
+    # not bound from the host: /etc/{hosts,resolv.conf,nsswitch.conf,services,
+    # protocols,passwd,group,host.conf}. See kenneld::etc and §7.2.5.
+    "/proc/self/**", "/proc/cpuinfo", "/proc/meminfo", "/proc/version",
+    "/sys/devices/system/cpu/**",        # processor-count detection
+]
+\end{kennelcode}
+
+\begin{kennelcode}
+# Write baseline: none. The workload's writable space is the constructed $HOME and
+# the private /tmp (below); a usable template or leaf grants its project write paths.
+write = []
+\end{kennelcode}
+
+\begin{kennelcode}
+# There is intentionally NO fs.deny list. The constructed view is deny-by-default:
+# only fs.read/fs.write paths exist in it at all, so the host's ~/.ssh, ~/.aws,
+# /etc/shadow, /dev/mem, … are simply absent — not present-but-denied. And a deny
+# that fell *inside* a granted directory could not be enforced anyway (Landlock is
+# allow-only and cannot subtract a single path). A long credential denylist here
+# would be reassurance theatre; the real control is granting narrowly, not denying
+# broadly. (T1.1/T2.1 are defended by the view's absence-by-default, not a denylist.)
+\end{kennelcode}
+
+\begin{kennelcode}
+# The constructed $HOME (T1.1). HOME is /home/<user> (the masked [identity].user,
+# default `kennel`); granted ~/ paths are bound beneath it; the Landlock ruleset
+# backstops on the resolved view (§7.2.3/.5). The home root is writable by default,
+# but it is a fresh tmpfs — anything written directly there is ephemeral. Persistence
+# is opt-in per path via `persist` (or a writable ~/ grant), which binds the real host
+# inode read-write beneath the home. Set `readonly = true` to suppress the default
+# home-write grant (only write-granted ~/ paths stay writable then).
+[fs.home]
+shadow = true
+\end{kennelcode}
+
+\begin{kennelcode}
+# Private /tmp (T1.1): a fresh tmpfs; the host /tmp is invisible.
+[fs.tmp]
+writable = true
+size = "512M"
+\end{kennelcode}
+
+\begin{kennelcode}
+# Procfs: PID namespace + hidepid=2 — the workload sees only its own tree (T1.1, T1.6).
+[fs.proc]
+hidepid = true
+\end{kennelcode}
+
+\begin{kennelcode}
+# Minimal /dev: a constructed tmpfs with only these nodes bound in (T1.1, T1.6). Each
+# granted node is also Landlock read/write/ioctl-able (§8.1).
+[fs.dev]
+allow = [
+    "/dev/null", "/dev/zero", "/dev/random", "/dev/urandom",
+    "/dev/tty", "/dev/pts/**",
+]
+\end{kennelcode}
+
+\hypertarget{libraries}{%
+\subsection{Libraries}\label{libraries}}
+
+There is no library allowlist, by design. Execution is gated by Landlock
+FS\_EXECUTE, which the kernel enforces only at execve(2): on the
+allowlisted binary AND its dynamic loader (PT\_INTERP/ld.so, resolved by
+the compiler from each exec.allow binary). Shared libraries are mmap'd
+by the loader, which Landlock does NOT gate, so they load with READ
+alone (07-3-exec) --- the fs.read grants above (/usr, /lib, /lib64)
+already make them readable. A library therefore cannot be
+``execute-gated'' under Landlock; the kennel makes no such claim rather
+than ship an unenforceable filter. (To stop a workload running NEW
+programs, that is exec.allow --- default-deny; to stop it loading code
+in-process, the workload must not be an interpreter you handed arbitrary
+input.)
+
+\hypertarget{network}{%
+\subsection{Network}\label{network}}
+
+All egress funnels through a per-kennel SOCKS5/HTTP proxy; the cgroup
+BPF denies direct connect() to anything but the proxy (fail-closed). The
+proxy resolves names via the OS resolver and vets the answers against
+the allowlist + the invariant denies (rebinding defence) --- there is no
+configurable {[}net.dns{]}.
+
+\begin{kennelcode}
+[net]
+mode = "constrained"
+# Both families' proxy listeners are on by default in the proxied modes; a family
+# is enabled iff its address resolves (no separate on/off flag).
+# Listener address is computed from the kennel's <tag>/<ctx> (§7.3.2); override the
+# host offset/port within the kennel's own subnet with proxy_listen_v4_address =
+# "offset:port" (offset 1..=14, default "1:1080"). Project Kennel injects
+# HTTPS_PROXY / HTTP_PROXY / ALL_PROXY pointing at the computed proxy address.
+\end{kennelcode}
+
+\begin{kennelcode}
+# Invariant denies — the destinations that are NEVER a legitimate egress target,
+# enforced deny-first by the proxy (even in `open` mode) and non-removable by any
+# derived template or leaf (T1.6). Deliberately NARROW: cloud metadata (the SSRF
+# crown jewel) and link-local only.
+\end{kennelcode}
+
+\begin{kennelcode}
+# RFC1918 / CGNAT are intentionally NOT invariant denies. Making private space
+# permanently unreachable is self-defeating — a kennel routinely needs a local dev
+# server, a LAN database, an internal registry, or a corp service. In `constrained`
+# mode (the default) nothing private is reachable anyway unless a `[[net.proxy.allow]]`
+# names it; in `open` mode the operator has opted into arbitrary egress. Either way
+# that is the policy author's call, not an immovable floor.
+[[net.proxy.deny.invariant]]
+cidr = "169.254.169.254/32"
+reason = "cloud metadata IPv4 — never permitted from a kennel (mandatory invariant)"
+[[net.proxy.deny.invariant]]
+cidr = "fd00:ec2::254/128"
+reason = "AWS IPv6 metadata — never permitted"
+[[net.proxy.deny.invariant]]
+cidr = "fe80::/10"
+reason = "IPv6 link-local — no legitimate egress destination"
+\end{kennelcode}
+
+\begin{kennelcode}
+# Bind: a wildcard bind (0.0.0.0 / ::) is rewritten to the kennel's private
+# loopback address (so dev servers work but are reachable only from inside the
+# kennel's address space); host loopback is not bindable; no privileged ports.
+[net.bind]
+inaddr_any_policy = "rewrite"
+in6addr_any_policy = "rewrite"
+allow_host_loopback_v4 = false
+allow_host_loopback_v6 = false
+min_port = 1024
+\end{kennelcode}
+
+\begin{kennelcode}
+# Force IPV6_V6ONLY=1 so a dual-stack socket cannot escape the v4 rewrite (T1.6).
+[net.ipv6]
+force_v6only = true
+\end{kennelcode}
+
+\begin{kennelcode}
+# Per-kennel egress audit log (one JSONL record per request; denies at higher
+# level). Written by the proxy; persists across runs.
+[net.audit]
+log_path = "~/.local/state/kennel/<kennel>/network.jsonl"
+level = "summary"
+\end{kennelcode}
+
+\hypertarget{af_unix-sockets}{%
+\subsection{AF\_UNIX sockets}\label{af_unix-sockets}}
+
+Default-deny; the constructed view contains only granted sockets.
+Abstract- namespace sockets are denied categorically --- enforced
+natively by Landlock scoping (ABI 6, §8.1), not the legacy
+seccomp/AppArmor fallback. (T1.6.)
+
+\begin{kennelcode}
+[unix]
+abstract = "deny"
+\end{kennelcode}
+
+\hypertarget{process-introspection}{%
+\subsection{Process introspection}\label{process-introspection}}
+
+The PID namespace hides every process outside the kennel; hidepid
+backstops it. (Cross-boundary ptrace and signalling are already
+prevented by the PID/user namespace --- there is no separate control the
+runtime enforces, so none is declared. The advisory
+{[}unsafe.ptrace{]}/{[}unsafe.signal{]} sub-sections exist to
+\emph{express} intent but warn that scoping comes from PID-ns/seccomp;
+this template needs neither. T1.6.)
+
+\hypertarget{environment}{%
+\subsection{Environment}\label{environment}}
+
+The environment is SYNTHESISED, not filtered. The spawn clears the
+inherited env entirely (env\_clear) and rebuilds it: the framework sets
+HOME, PATH, USER, LOGNAME, SHELL (and forwards the caller's TERM);
+\texttt{set} below adds fixed extras. There is no
+\texttt{pass}/\texttt{deny} here --- a passthrough/denylist is fiction
+when nothing is inherited in the first place (the host's secrets,
+AWS\_\emph{, }\_TOKEN, \ldots{} never reach the kennel because the whole
+env is wiped, not because they were named in a denylist).
+
+\begin{kennelcode}
+[env]
+set = { TMPDIR = "/tmp", NO_PROXY = "" }
+\end{kennelcode}
+
+\hypertarget{seccomp-defence-in-depth}{%
+\subsection{Seccomp (defence in depth)}\label{seccomp-defence-in-depth}}
+
+Most enforcement is at higher layers (Landlock for files, cgroup BPF for
+net); this filter denies a small set of syscalls with no legitimate use
+here and a history of exploit-chain involvement. Default action: errno
+(EPERM).
+
+\begin{kennelcode}
+[seccomp]
+profile = "default"
+deny = [
+    "userfaultfd", "perf_event_open", "bpf",
+    "process_vm_readv", "process_vm_writev",
+    "kexec_load", "kexec_file_load",
+    "mount", "umount", "umount2", "pivot_root",
+    "swapon", "swapoff", "reboot",
+    "init_module", "finit_module", "delete_module",
+    "personality",
+]
+\end{kennelcode}
+
+\hypertarget{resource-limits-off-by-default}{%
+\subsection{Resource limits (off by
+default)}\label{resource-limits-off-by-default}}
+
+setrlimit(2) caps, applied in the seal. Nothing is set here; a derived
+template or leaf opts in. Names are the short rlimit resources (nofile,
+nproc, as, cpu, data, fsize, core, stack, memlock, \ldots); values are
+``soft'' or ``soft:hard'', each a number (optional K/M/G) or
+``unlimited''. Example:
+
+\begin{kennelcode}
+[ulimits]
+\end{kennelcode}
+
+\begin{kennelcode}
+nofile = "8192"
+\end{kennelcode}
+
+\begin{kennelcode}
+nproc  = "512"
+\end{kennelcode}
+
+\begin{kennelcode}
+core   = "0"
+\end{kennelcode}
+
+\begin{kennelcode}
+[signature]
+algorithm = "sshsig"
+key_id = "kennel-maint-2026"
+signature = "...envelope elided in print..."
+\end{kennelcode}
+
+\hypertarget{interactive-template-the-floor-made-into-a-usable-human-shell}{%
+\section{\texorpdfstring{\texttt{interactive\ (template)} --- the floor
+made into a usable human
+shell}{interactive (template) --- the floor made into a usable human shell}}\label{interactive-template-the-floor-made-into-a-usable-human-shell}}
+
+Template: interactive --- a credible human-driven shell.
+
+A confined but genuinely usable workstation shell: bash + the standard
+coreutils, text tools, editors, archives, process inspection, and the
+common network tools, with HOST egress (a human is at the keyboard;
+direct egress on the host stack, the cloud-metadata invariant still
+applies). Execution is deny-by-default --- the toolset below is exactly
+what runs; the compiler resolves each tool's library closure
+(\texttt{{[}lib{]}}, inherited).
+
+\$HOME and /tmp are writable (ephemeral); grant a project dir +
+persistence in your own leaf. For an offline shell, derive base-confined
+instead (or set net.mode).
+
+\begin{kennelcode}
+# run it directly:
+kennel run interactive -- /bin/bash
+# or derive it and add your project:
+#   template_base = "interactive"
+#   [[fs.write.add]] path = "~/work"
+\end{kennelcode}
+
+\begin{kennelcode}
+template_name = "interactive"
+template_base = "base-confined"
+\end{kennelcode}
+
+Exec floor composed from the fragment catalogue (05-templates.md §5.10):
+the shells + POSIX userland + capability bundles, instead of
+hand-listing them.
+
+\begin{kennelcode}
+include = ["core-shell", "core-coreutils", "core-file-mutation", "core-archive", "net-clients", "vcs-git"]
+\end{kennelcode}
+
+Host egress: a human-driven shell needs unmediated network (curl, git
+clone, ssh, \ldots) on the host stack --- no SOCKS proxy. This shares
+the host network namespace and so reinstates the host-recon residual
+(T1.6), which is why \texttt{host} requires a reason; the cloud-metadata
+invariant deny + the net.bpf allowlist are still enforced via
+BPF/Landlock.
+
+\begin{kennelcode}
+[net]
+mode = "host"
+reason = "an interactive human shell needs direct, unmediated egress (git/ssh/curl) on the host network stack"
+\end{kennelcode}
+
+\begin{kennelcode}
+# Re-list base-confined's read baseline (a template's fs.read replaces, not adds) and
+# widen /proc to the whole namespaced procfs so `ps`/`top`/`free` see this kennel's
+# own processes (the PID namespace already hides everything else).
+[fs]
+read = [
+    "/usr/**", "/lib/**", "/lib64/**",
+    "/etc/ssl/**", "/etc/pki/**",
+    "/etc/ld.so.conf", "/etc/ld.so.conf.d/**", "/etc/ld.so.cache",
+    "/etc/alternatives/**",   # awk→gawk, vi, editor, pager … symlink farm (else dangles)
+    "/proc/**",
+    "/sys/devices/system/cpu/**",
+]
+\end{kennelcode}
+
+\begin{kennelcode}
+[exec]
+shell = "/bin/bash"
+# Only the binaries no fragment provides stay inline here; the shell, the POSIX
+# userland, and the toolchains come from the `include` above.
+allow = [
+    "/usr/bin/clear",
+    "/usr/bin/df",
+    "/usr/bin/du",
+    "/usr/bin/free",
+    "/usr/bin/hexdump",
+    "/usr/bin/ip",
+    "/usr/bin/kill",
+    "/usr/bin/nano",
+    "/usr/bin/netstat",
+    "/usr/bin/od",
+    "/usr/bin/pgrep",
+    "/usr/bin/pidof",
+    "/usr/bin/pkill",
+    "/usr/bin/ps",
+    "/usr/bin/python3",
+    "/usr/bin/scp",
+    "/usr/bin/ss",
+    "/usr/bin/ssh",
+    "/usr/bin/strings",
+    "/usr/bin/sync",
+    "/usr/bin/timeout",
+    "/usr/bin/top",
+    "/usr/bin/uptime",
+    "/usr/bin/vi",
+    "/usr/bin/vim",
+    "/usr/bin/vim.basic",
+    "/usr/bin/watch",
+    "/usr/bin/xxd",
+    "/usr/sbin/arp",
+    "/usr/sbin/ifconfig",
+    "/usr/sbin/route",
+]
+# net-tools (ifconfig/route/arp) live in /usr/sbin; put it on PATH so they resolve
+# by name. Landlock EXECUTE is independent of PATH (the absolute allow entries above
+# are what grant execution); this is purely so `ifconfig` is found.
+path = ["/usr/bin", "/usr/local/bin", "/bin", "/usr/sbin", "/sbin"]
+\end{kennelcode}
+
+\begin{kennelcode}
+[lifecycle]
+ttl = "12h"
+ttl_action = "warn"
+\end{kennelcode}
+
+\begin{kennelcode}
+[signature]
+algorithm = "sshsig"
+key_id = "kennel-maint-2026"
+signature = "...envelope elided in print..."
+\end{kennelcode}
+
+\hypertarget{include-core-shell}{%
+\subsection{\texorpdfstring{include\ =\ "core-shell"}{include = "core-shell"}}\label{include-core-shell}}
+
+Fragment: core-shell (POSIX shells)
+
+A composable capability bundle (05-templates.md §5.10): The POSIX
+shells. base-confined denies all execution and sets
+\texttt{{[}exec{]}.shell} without granting it, so every interactive or
+scripted kennel needs the shell explicitly; this is that grant, once,
+instead of in every template.
+
+\begin{kennelcode}
+include = ["core-shell"]
+\end{kennelcode}
+
+Additive-only (§5.10): every entry is an
+\texttt{{[}{[}exec.allow.add{]}{]}} delta. Composing this widens the
+program menu only; \texttt{argv{[}0{]}} stays gated by the resolved
+\texttt{{[}exec{]}.allow} under Landlock execve default-deny, and the
+cage (net/fs/ttl/ ceilings) is untouched.
+
+Adds to the exec floor:
+
+\begin{itemize}
+\tightlist
+\item
+  \texttt{/bin/sh} (the POSIX shell, and base-confined's default
+  \texttt{{[}exec{]}.shell})
+\item
+  \texttt{/usr/bin/sh} (the POSIX shell on a merged-usr system)
+\item
+  \texttt{/bin/bash} (GNU bash)
+\item
+  \texttt{/usr/bin/bash} (GNU bash on a merged-usr system)
+\item
+  \texttt{/usr/bin/dash} (the Debian Almquist shell (\texttt{/bin/sh} on
+  Debian/Ubuntu))
+\item
+  \texttt{/usr/bin/env} (the
+  \texttt{\#!/usr/bin/env\ \textless{}interp\textgreater{}} shebang
+  interpreter (the kernel's execve target for env-shebang scripts))
+\end{itemize}
+
+\hypertarget{include-core-coreutils}{%
+\subsection{\texorpdfstring{include\ =\ "core-coreutils"}{include = "core-coreutils"}}\label{include-core-coreutils}}
+
+Fragment: core-coreutils (Read / compute / text userland)
+
+A composable capability bundle (05-templates.md §5.10): The non-mutating
+POSIX userland: read, inspect, filter, and transform. The block every
+interactive and agent template repeats. Carries NO filesystem-mutating
+tool --- compose \texttt{core-file-mutation} for that --- so a read-only
+kennel includes this alone and cannot write.
+
+\begin{kennelcode}
+include = ["core-coreutils"]
+\end{kennelcode}
+
+Additive-only (§5.10): every entry is an
+\texttt{{[}{[}exec.allow.add{]}{]}} delta. Composing this widens the
+program menu only; \texttt{argv{[}0{]}} stays gated by the resolved
+\texttt{{[}exec{]}.allow} under Landlock execve default-deny, and the
+cage (net/fs/ttl/ ceilings) is untouched.
+
+Adds to the exec floor:
+
+\begin{itemize}
+\tightlist
+\item
+  \texttt{/usr/bin/cat} (concatenate and print files)
+\item
+  \texttt{/usr/bin/ls} (list directory contents)
+\item
+  \texttt{/usr/bin/head} (print the first lines)
+\item
+  \texttt{/usr/bin/tail} (print the last lines)
+\item
+  \texttt{/usr/bin/wc} (count lines/words/bytes)
+\item
+  \texttt{/usr/bin/sort} (sort lines)
+\item
+  \texttt{/usr/bin/uniq} (filter adjacent duplicate lines)
+\item
+  \texttt{/usr/bin/cut} (extract columns)
+\item
+  \texttt{/usr/bin/tr} (translate characters)
+\item
+  \texttt{/usr/bin/nl} (number lines)
+\item
+  \texttt{/usr/bin/tac} (concatenate in reverse)
+\item
+  \texttt{/usr/bin/rev} (reverse lines)
+\item
+  \ldots and 36 more
+\end{itemize}
+
+\hypertarget{include-core-file-mutation}{%
+\subsection{\texorpdfstring{include\ =\ "core-file-mutation"}{include = "core-file-mutation"}}\label{include-core-file-mutation}}
+
+Fragment: core-file-mutation (Filesystem-mutating userland)
+
+A composable capability bundle (05-templates.md §5.10): The write-side
+coreutils: create, move, remove, link, change mode. Kept separate from
+\texttt{core-coreutils} so a read-only kennel cannot mutate while a
+scratch/build kennel adds it.
+
+\begin{kennelcode}
+include = ["core-file-mutation"]
+\end{kennelcode}
+
+Additive-only (§5.10): every entry is an
+\texttt{{[}{[}exec.allow.add{]}{]}} delta. Composing this widens the
+program menu only; \texttt{argv{[}0{]}} stays gated by the resolved
+\texttt{{[}exec{]}.allow} under Landlock execve default-deny, and the
+cage (net/fs/ttl/ ceilings) is untouched.
+
+Adds to the exec floor:
+
+\begin{itemize}
+\tightlist
+\item
+  \texttt{/usr/bin/cp} (copy files)
+\item
+  \texttt{/usr/bin/mv} (move/rename files)
+\item
+  \texttt{/usr/bin/rm} (remove files)
+\item
+  \texttt{/usr/bin/mkdir} (create directories)
+\item
+  \texttt{/usr/bin/rmdir} (remove empty directories)
+\item
+  \texttt{/usr/bin/ln} (create links)
+\item
+  \texttt{/usr/bin/touch} (create/update timestamps)
+\item
+  \texttt{/usr/bin/chmod} (change file modes)
+\item
+  \texttt{/usr/bin/mktemp} (create a temporary file/dir)
+\item
+  \texttt{/usr/bin/install} (copy and set permissions)
+\end{itemize}
+
+\hypertarget{include-core-archive}{%
+\subsection{\texorpdfstring{include\ =\ "core-archive"}{include = "core-archive"}}\label{include-core-archive}}
+
+Fragment: core-archive (Archive + compression)
+
+A composable capability bundle (05-templates.md §5.10): Tar and the
+common compressors/archivers --- unpack a source tarball, compress an
+artifact.
+
+\begin{kennelcode}
+include = ["core-archive"]
+\end{kennelcode}
+
+Additive-only (§5.10): every entry is an
+\texttt{{[}{[}exec.allow.add{]}{]}} delta. Composing this widens the
+program menu only; \texttt{argv{[}0{]}} stays gated by the resolved
+\texttt{{[}exec{]}.allow} under Landlock execve default-deny, and the
+cage (net/fs/ttl/ ceilings) is untouched.
+
+Adds to the exec floor:
+
+\begin{itemize}
+\tightlist
+\item
+  \texttt{/usr/bin/tar} (tape archiver)
+\item
+  \texttt{/usr/bin/gzip} (gzip compress)
+\item
+  \texttt{/usr/bin/gunzip} (gzip decompress)
+\item
+  \texttt{/usr/bin/zcat} (stream a gzip file)
+\item
+  \texttt{/usr/bin/xz} (xz (de)compress)
+\item
+  \texttt{/usr/bin/bzip2} (bzip2 (de)compress)
+\item
+  \texttt{/usr/bin/zip} (zip archiver)
+\item
+  \texttt{/usr/bin/unzip} (zip extractor)
+\item
+  \texttt{/usr/bin/zstd} (zstandard (de)compress)
+\end{itemize}
+
+\hypertarget{include-net-clients}{%
+\subsection{\texorpdfstring{include\ =\ "net-clients"}{include = "net-clients"}}\label{include-net-clients}}
+
+Fragment: net-clients (HTTP(S) fetch clients)
+
+A composable capability bundle (05-templates.md §5.10): The command-line
+fetch-client BINARIES. Distinct from \texttt{net-permissive}, which
+grants egress DESTINATIONS: this adds curl/wget to \texttt{exec.allow};
+the leaf or \texttt{net-permissive} says where they may reach, and a
+\texttt{{[}net{]}.mode\ =\ "constrained"} cage + the proxy bound that
+egress.
+
+\begin{kennelcode}
+include = ["net-clients"]
+\end{kennelcode}
+
+Additive-only (§5.10): every entry is an
+\texttt{{[}{[}exec.allow.add{]}{]}} delta. Composing this widens the
+program menu only; \texttt{argv{[}0{]}} stays gated by the resolved
+\texttt{{[}exec{]}.allow} under Landlock execve default-deny, and the
+cage (net/fs/ttl/ ceilings) is untouched.
+
+Adds to the exec floor:
+
+\begin{itemize}
+\tightlist
+\item
+  \texttt{/usr/bin/curl} (transfer a URL)
+\item
+  \texttt{/usr/bin/wget} (retrieve files over HTTP(S)/FTP)
+\end{itemize}
+
+\hypertarget{include-vcs-git}{%
+\subsection{\texorpdfstring{include\ =\ "vcs-git"}{include = "vcs-git"}}\label{include-vcs-git}}
+
+Fragment: vcs-git
+
+A composable capability bundle (05-templates.md §5.10): git plus its
+per-subcommand helpers, and the system git config read-only. Include it
+for a kennel that does source control.
+
+\begin{kennelcode}
+include = ["vcs-git"]
+\end{kennelcode}
+
+Additive-only (§5.10). This grants the git \emph{binaries} and the
+\emph{system} config; it deliberately does NOT grant network egress ---
+git-over-HTTPS to a specific forge is a destination the leaf states (or
+\texttt{net-permissive} adds), and git-over-SSH goes through the
+per-kennel SSH bastion (\texttt{{[}ssh{]}}, §7.10), never a real key in
+the kennel.
+
+Adds to the exec floor:
+
+\begin{itemize}
+\tightlist
+\item
+  \texttt{/usr/bin/git} (git version-control client)
+\item
+  \texttt{/usr/lib/git-core/**} (git's per-subcommand helper binaries,
+  re-exec'd by \texttt{git})
+\item
+  \texttt{/etc/gitconfig} (system-wide git configuration (read-only))
+\end{itemize}
+
+\hypertarget{interactive-policy-the-thin-leaf-that-pins-a-workload}{%
+\section{\texorpdfstring{\texttt{interactive\ (policy)} --- the thin
+leaf that pins a
+workload}{interactive (policy) --- the thin leaf that pins a workload}}\label{interactive-policy-the-thin-leaf-that-pins-a-workload}}
+
+Reference policy: interactive --- the permissive, ready-to-run confined
+human shell.
+
+Maintainer-signed and shipped enabled: \texttt{kennel\ run\ interactive}
+drops you into a confined \texttt{/bin/bash} with a broad workstation
+toolset --- the interactive base (shells, coreutils, file tools,
+editors, archives, net clients, git, python3) widened with the C
+toolchain and the development headers --- and HOST egress. Deliberately
+permissive: a credible daily-driver shell, still inside the cage
+(no\_new\_privs, dropped caps, deny-setuid, shadowed \$HOME, masked
+/etc, private /tmp, self-only procfs). Derive your own leaf to add a
+project dir or tighten the toolset.
+
+\begin{kennelcode}
+name = "interactive"
+template_base = "interactive"
+\end{kennelcode}
+
+Widen the inherited interactive toolset toward a full dev shell: the C
+toolchain (cc/make/\ldots) and the development headers, on top of the
+base's shells/coreutils/editors/net-clients/git/python3. The
+language-registry fragments (lang-python/lang-node) are NOT included ---
+they carry by-name proxy-egress rules host mode rejects; under host
+egress python3 (inherited) reaches registries directly.
+
+\begin{kennelcode}
+include = [
+    "toolchain-c",
+    "dev-headers",
+]
+\end{kennelcode}
+
+Host egress (also the interactive default): a human shell needs
+unmediated network.
+
+\begin{kennelcode}
+[net]
+mode = "host"
+reason = "an interactive human shell needs direct, unmediated egress (git/ssh/curl) on the host network stack"
+\end{kennelcode}
+
+\begin{kennelcode}
+[workload]
+argv = ["/bin/bash"]
+\end{kennelcode}
+
+\begin{kennelcode}
+[signature]
+algorithm = "sshsig"
+key_id = "kennel-maint-2026"
+signature = "...envelope elided in print..."
+\end{kennelcode}
+
+\hypertarget{include-toolchain-c}{%
+\subsection{\texorpdfstring{include\ =\ "toolchain-c"}{include = "toolchain-c"}}\label{include-toolchain-c}}
+
+Fragment: toolchain-c
+
+A composable capability bundle (05-templates.md §5.10): the C/C++ build
+toolchain --- compiler, assembler, linker, archiver, and make. Include
+it for a kennel that compiles native code; the project tree itself is
+granted by the leaf, so this fragment adds only the tools.
+
+\begin{kennelcode}
+include = ["toolchain-c"]
+\end{kennelcode}
+
+Additive-only (§5.10). No network and no extra filesystem write: a build
+reads the toolchain (already on \texttt{fs.read} via base-confined's
+\texttt{/usr/**}) and writes only into the project tree the leaf made
+writable.
+
+Adds to the exec floor:
+
+\begin{itemize}
+\tightlist
+\item
+  \texttt{/usr/bin/cc} (C compiler driver (the default \texttt{cc}))
+\item
+  \texttt{/usr/bin/gcc} (GNU C compiler)
+\item
+  \texttt{/usr/bin/g++} (GNU C++ compiler)
+\item
+  \texttt{/usr/bin/cpp} (C preprocessor (invoked by the compiler
+  driver))
+\item
+  \texttt{/usr/bin/as} (GNU assembler)
+\item
+  \texttt{/usr/bin/ld} (GNU linker)
+\item
+  \texttt{/usr/bin/ar} (static-archive tool)
+\item
+  \texttt{/usr/bin/make} (GNU make)
+\item
+  \texttt{/usr/lib/gcc/**} (gcc's per-version backend binaries (cc1,
+  cc1plus, collect2), re-exec'd by the driver)
+\end{itemize}
+
+\hypertarget{include-dev-headers}{%
+\subsection{\texorpdfstring{include\ =\ "dev-headers"}{include = "dev-headers"}}\label{include-dev-headers}}
+
+Fragment: dev-headers (Development headers + kernel source)
+
+A composable capability bundle (05-templates.md §5.10): Adds /usr/src
+and /usr/include back into the view (read-only). These are absent from
+the curated base (construction-by-absence) and only needed by
+build/compile workloads. Include this fragment in templates that compile
+C/C++/Rust code against system headers.
+
+\begin{kennelcode}
+include = ["dev-headers"]
+\end{kennelcode}
+
+Additive-only (§5.10): every entry is an {[}{[}fs.read.add{]}{]} delta.
+Composing this widens the read view only; the cage
+(net/fs.write/exec/ceilings) is untouched.
+
+Adds to the exec floor:
+
+\begin{itemize}
+\tightlist
+\item
+  \texttt{/usr/include/**} (C/C++ system headers (absent from the
+  curated base))
+\item
+  \texttt{/usr/src/**} (kernel headers and source trees (absent from the
+  curated base))
+\end{itemize}

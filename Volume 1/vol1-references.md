@@ -1,0 +1,26 @@
+# References
+
+Works cited across Volume 1. Chapters cite by key — `[Anderson]`, `[Irvine]` — and the keys resolve
+here. Each work is entered once.
+
+[Anderson] James P. Anderson, *Computer Security Technology Planning Study*, ESD-TR-73-51, Vol. I,
+Air Force Electronic Systems Division, Hanscom AFB, Bedford, MA, October 1972. The reference monitor
+and its three requirements are set out in §4.1.1.
+<https://csrc.nist.gov/files/pubs/conference/1998/10/08/proceedings-of-the-21st-nissc-1998/final/docs/early-cs-papers/ande72.pdf>
+
+[Irvine] Cynthia E. Irvine, "The Reference Monitor Concept as a Unifying Principle in Computer
+Security Education," in Proc. IFIP TC11 WG 11.8 First World Conference on Information Security
+Education, 1999, pp. 27–37 (Naval Postgraduate School, June 1999).
+<https://apps.dtic.mil/sti/tr/pdf/ADA423529.pdf>
+
+[SaltzerSchroeder] Jerome H. Saltzer and Michael D. Schroeder, "The Protection of Information in
+Computer Systems," *Proceedings of the IEEE*, vol. 63, no. 9, pp. 1278–1308, September 1975. Origin
+of the design principles, among them complete mediation, least privilege, economy of mechanism, and
+fail-safe defaults.
+<https://www.cs.virginia.edu/~evans/cs551/saltzer/>
+
+[Schneider] Fred B. Schneider, "Enforceable Security Policies," *ACM Transactions on Information and
+System Security*, vol. 3, no. 1, pp. 30–50, February 2000. Characterizes the policies a monitor can
+enforce by watching execution — exactly the safety properties — with complete mediation and isolation
+among its conditions, and security automata as the specification.
+<https://www.cs.cornell.edu/fbs/publications/EnfSecPols.pdf>

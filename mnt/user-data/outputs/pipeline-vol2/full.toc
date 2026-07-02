@@ -1,0 +1,198 @@
+\contentsline {chapter}{Project Kennel: Construction Principles}{1}{chapter*.3}%
+\contentsline {section}{Stance}{1}{section*.4}%
+\contentsline {subsection}{read-by-the-hostile}{1}{section*.5}%
+\contentsline {subsection}{built-to-outlast}{2}{section*.6}%
+\contentsline {section}{Supply}{2}{section*.7}%
+\contentsline {subsection}{own-your-supply-chain}{2}{section*.8}%
+\contentsline {subsection}{dont-roll-your-own}{2}{section*.9}%
+\contentsline {section}{Construction}{3}{section*.10}%
+\contentsline {subsection}{parse-dont-validate}{3}{section*.11}%
+\contentsline {subsection}{make-invalid-unrepresentable}{3}{section*.12}%
+\contentsline {subsection}{errors-not-panics}{3}{section*.13}%
+\contentsline {subsection}{quarantine-the-unsafe}{4}{section*.14}%
+\contentsline {chapter}{\headfont Part I\hskip 1em\relax The machinery}{5}{section*.15}%
+\contentsline {chapter}{1. Into the machine}{6}{chapter*.16}%
+\contentsline {section}{1.1 What counts as a control}{6}{section*.17}%
+\contentsline {section}{1.2 The construction facilities}{7}{section*.18}%
+\contentsline {section}{1.3 The interposition facilities}{7}{section*.19}%
+\contentsline {section}{1.4 Binder}{8}{section*.20}%
+\contentsline {section}{1.5 Privilege and identity}{9}{section*.21}%
+\contentsline {section}{1.6 The weave}{9}{section*.22}%
+\contentsline {section}{1.7 The kernel floor}{10}{section*.23}%
+\contentsline {section}{1.8 The same weave elsewhere}{10}{section*.24}%
+\contentsline {chapter}{2. Process and privilege model}{12}{chapter*.25}%
+\contentsline {section}{2.1 The processes}{12}{section*.26}%
+\contentsline {section}{2.2 One privileged component}{13}{section*.27}%
+\contentsline {section}{2.3 The factory: privilege bounded to one construction}{14}{section*.28}%
+\contentsline {section}{2.4 The trusted init and the drop}{15}{section*.29}%
+\contentsline {section}{2.5 Two identities, not one}{16}{section*.30}%
+\contentsline {section}{2.6 The unsafe at this layer}{16}{section*.31}%
+\contentsline {chapter}{3. Binder's Node 0}{18}{chapter*.32}%
+\contentsline {section}{3.0 What binder is}{18}{section*.33}%
+\contentsline {section}{3.1 From connect to call}{19}{section*.34}%
+\contentsline {section}{3.2 The bus each kennel gets}{19}{section*.35}%
+\contentsline {section}{3.3 kenneld on node 0}{20}{section*.36}%
+\contentsline {section}{3.4 A transaction across the boundary}{21}{section*.37}%
+\contentsline {section}{3.5 Control plane, not data plane}{21}{section*.38}%
+\contentsline {section}{3.6 The crate and the unsafe}{22}{section*.39}%
+\contentsline {chapter}{4. The trusted base}{23}{chapter*.40}%
+\contentsline {section}{4.1 What counts as trusted}{23}{section*.41}%
+\contentsline {section}{4.2 The vendored truth}{24}{section*.42}%
+\contentsline {section}{4.3 The empty intersection}{24}{section*.43}%
+\contentsline {section}{4.4 The unsafe, quarantined}{25}{section*.44}%
+\contentsline {section}{4.5 The shape of the workspace}{25}{section*.45}%
+\contentsline {chapter}{5. The command surface}{26}{chapter*.46}%
+\contentsline {section}{5.1 The shim}{26}{section*.47}%
+\contentsline {section}{5.2 Outside the trusted base}{27}{section*.48}%
+\contentsline {section}{5.3 The control protocol}{27}{section*.49}%
+\contentsline {section}{5.4 The verbs}{28}{section*.50}%
+\contentsline {chapter}{\headfont Part II\hskip 1em\relax The resource classes}{29}{section*.51}%
+\contentsline {chapter}{6. The filesystem}{30}{chapter*.52}%
+\contentsline {section}{6.1 The view and the access}{30}{section*.53}%
+\contentsline {section}{6.2 The constructed home}{31}{section*.54}%
+\contentsline {section}{6.3 Writable, but ephemeral}{32}{section*.55}%
+\contentsline {section}{6.4 Denials and the pseudo-filesystems}{32}{section*.56}%
+\contentsline {section}{6.5 The trust manifest}{32}{section*.57}%
+\contentsline {chapter}{7. Execution}{35}{chapter*.58}%
+\contentsline {section}{7.1 What it gates}{35}{section*.59}%
+\contentsline {section}{7.2 The allowlist and no\_new\_privs}{35}{section*.60}%
+\contentsline {section}{7.3 What FS\_EXECUTE checks}{36}{section*.61}%
+\contentsline {section}{7.4 Writable, and interpreted}{37}{section*.62}%
+\contentsline {section}{7.5 Composing the allowlist}{38}{section*.63}%
+\contentsline {chapter}{8. The network}{39}{chapter*.64}%
+\contentsline {section}{8.1 The four modes}{39}{section*.65}%
+\contentsline {section}{8.2 The proxy as gateway}{40}{section*.66}%
+\contentsline {section}{8.3 The two ACLs}{41}{section*.67}%
+\contentsline {section}{8.4 The egress floor and its residuals}{42}{section*.68}%
+\contentsline {section}{8.5 Loopback isolation}{42}{section*.69}%
+\contentsline {section}{8.6 Binding and the inbound mirror}{43}{section*.70}%
+\contentsline {section}{8.7 Shaping the bind}{44}{section*.71}%
+\contentsline {chapter}{9. Local services}{45}{chapter*.72}%
+\contentsline {section}{9.1 The ambient surface}{45}{section*.73}%
+\contentsline {section}{9.2 The brokered-connect facade}{46}{section*.74}%
+\contentsline {section}{9.3 The session bus is not a socket grant}{47}{section*.75}%
+\contentsline {section}{9.4 Asymmetry, and the refused set}{48}{section*.76}%
+\contentsline {chapter}{10. Cryptographic services}{51}{chapter*.77}%
+\contentsline {section}{10.1 The signing oracle}{51}{section*.78}%
+\contentsline {section}{10.2 Re-origination}{51}{section*.79}%
+\contentsline {section}{10.3 Where re-origination stops}{53}{section*.80}%
+\contentsline {section}{10.4 The line, generalised}{54}{section*.81}%
+\contentsline {chapter}{11. OCI images}{56}{chapter*.82}%
+\contentsline {section}{11.1 Booting an image without a daemon}{56}{section*.83}%
+\contentsline {section}{11.2 The image as a declared substrate}{57}{section*.84}%
+\contentsline {section}{11.3 The overlay}{58}{section*.85}%
+\contentsline {section}{11.4 Closure-lock}{58}{section*.86}%
+\contentsline {section}{11.5 What holds, and what is waived}{60}{section*.87}%
+\contentsline {chapter}{12. The remaining surfaces}{61}{chapter*.88}%
+\contentsline {section}{12.1 What the workload can observe}{61}{section*.89}%
+\contentsline {section}{12.2 What the workload inherits}{62}{section*.90}%
+\contentsline {section}{12.3 The terminal}{63}{section*.91}%
+\contentsline {section}{12.4 Capabilities, mounts, and the floor}{64}{section*.92}%
+\contentsline {chapter}{\headfont Part III\hskip 1em\relax The interplay}{65}{section*.93}%
+\contentsline {chapter}{13. Dynamic spawning}{66}{chapter*.94}%
+\contentsline {section}{13.1 The trifecta, split}{66}{section*.95}%
+\contentsline {section}{13.2 Request, don't author}{66}{section*.96}%
+\contentsline {section}{13.3 The handoff, and the daemon out of the path}{68}{section*.97}%
+\contentsline {section}{13.4 Ephemerality, fate-sharing, and the depth bound}{69}{section*.98}%
+\contentsline {chapter}{14. The service mesh}{71}{chapter*.99}%
+\contentsline {section}{14.1 Compile-local, resolve at runtime}{72}{section*.100}%
+\contentsline {section}{14.2 Deny-by-default and the broker}{72}{section*.101}%
+\contentsline {section}{14.3 The catalogue is the filesystem}{73}{section*.102}%
+\contentsline {section}{14.4 Supervision and the service-kennel trust class}{74}{section*.103}%
+\contentsline {section}{14.5 The af-unix shape}{76}{section*.104}%
+\contentsline {section}{14.6 The mesh bus}{76}{section*.105}%
+\contentsline {section}{14.7 The brokered shapes}{77}{section*.106}%
+\contentsline {chapter}{15. The interposed surface}{79}{chapter*.107}%
+\contentsline {section}{15.1 The display server is constructed, not granted}{79}{section*.108}%
+\contentsline {section}{15.2 The nested compositor and the brokered leg}{80}{section*.109}%
+\contentsline {section}{15.3 The invariant, and where the enforcer runs}{81}{section*.110}%
+\contentsline {section}{15.4 Isolation, the host leg, and the trust class}{82}{section*.111}%
+\contentsline {section}{15.5 The surfaces ahead}{82}{section*.112}%
+\contentsline {chapter}{\headfont Part IV\hskip 1em\relax The language and the tools}{84}{section*.113}%
+\contentsline {chapter}{16. The policy compiler}{85}{chapter*.114}%
+\contentsline {section}{16.1 The authored artefact and the enforced artefact}{85}{section*.115}%
+\contentsline {section}{16.2 The fold}{85}{section*.116}%
+\contentsline {section}{16.3 The signature is the commitment}{86}{section*.117}%
+\contentsline {section}{16.4 Lint and the footgun warnings}{87}{section*.118}%
+\contentsline {section}{16.5 The compiler is out of the trusted base}{87}{section*.119}%
+\contentsline {chapter}{17. The settled artefact}{89}{chapter*.120}%
+\contentsline {section}{17.1 The canonical body and its signature}{89}{section*.121}%
+\contentsline {section}{17.2 What the runtime does with it}{90}{section*.122}%
+\contentsline {section}{17.3 A signature is not a safety proof}{91}{section*.123}%
+\contentsline {section}{17.4 Provenance and attestation}{91}{section*.124}%
+\contentsline {chapter}{18. The keys}{93}{chapter*.125}%
+\contentsline {section}{18.1 The key and its identity}{93}{section*.126}%
+\contentsline {section}{18.2 The three tiers}{94}{section*.127}%
+\contentsline {section}{18.3 Rotation and revocation}{95}{section*.128}%
+\contentsline {section}{18.4 The honesty bound}{96}{section*.129}%
+\contentsline {chapter}{19. The audit account}{97}{chapter*.130}%
+\contentsline {section}{19.1 The risk report}{97}{section*.131}%
+\contentsline {section}{19.2 The audit log}{98}{section*.132}%
+\contentsline {section}{19.3 What the account is for, and where it stops}{99}{section*.133}%
+\contentsline {chapter}{\headfont Part V\hskip 1em\relax Policy reference}{101}{section*.134}%
+\contentsline {chapter}{20. The policy language}{102}{chapter*.135}%
+\contentsline {section}{{\color {codeink}\ttfamily {[}audit{]}}}{102}{section*.136}%
+\contentsline {subsection}{{\color {codeink}\ttfamily {[}audit.dbus{]}}}{102}{section*.137}%
+\contentsline {subsection}{{\color {codeink}\ttfamily {[}audit.file{]}}}{103}{section*.138}%
+\contentsline {subsection}{{\color {codeink}\ttfamily {[}audit.journald{]}}}{103}{section*.139}%
+\contentsline {subsection}{{\color {codeink}\ttfamily {[}audit.syslog{]}}}{103}{section*.140}%
+\contentsline {section}{{\color {codeink}\ttfamily {[}cap{]}}}{103}{section*.141}%
+\contentsline {section}{{\color {codeink}\ttfamily {[}{[}consumes{]}{]}}}{104}{section*.142}%
+\contentsline {section}{{\color {codeink}\ttfamily {[}dbus{]}}}{105}{section*.143}%
+\contentsline {subsection}{{\color {codeink}\ttfamily {[}dbus.audit{]}}}{105}{section*.144}%
+\contentsline {subsection}{{\color {codeink}\ttfamily {[}dbus.session{]}}}{105}{section*.145}%
+\contentsline {subsubsection}{{\color {codeink}\ttfamily {[}dbus.session.allow{]}}}{106}{section*.146}%
+\contentsline {section}{{\color {codeink}\ttfamily {[}env{]}}}{106}{section*.147}%
+\contentsline {section}{{\color {codeink}\ttfamily {[}exec{]}}}{107}{section*.148}%
+\contentsline {section}{{\color {codeink}\ttfamily {[}fs{]}}}{107}{section*.149}%
+\contentsline {subsection}{{\color {codeink}\ttfamily {[}fs.dev{]}}}{108}{section*.150}%
+\contentsline {subsection}{{\color {codeink}\ttfamily {[}fs.home{]}}}{109}{section*.151}%
+\contentsline {subsection}{{\color {codeink}\ttfamily {[}fs.proc{]}}}{110}{section*.152}%
+\contentsline {subsection}{{\color {codeink}\ttfamily {[}fs.tmp{]}}}{110}{section*.153}%
+\contentsline {section}{{\color {codeink}\ttfamily {[}identity{]}}}{111}{section*.154}%
+\contentsline {section}{{\color {codeink}\ttfamily {[}lifecycle{]}}}{111}{section*.155}%
+\contentsline {section}{{\color {codeink}\ttfamily {[}{[}mutable{]}{]}}}{112}{section*.156}%
+\contentsline {section}{{\color {codeink}\ttfamily {[}net{]}}}{113}{section*.157}%
+\contentsline {subsection}{{\color {codeink}\ttfamily {[}net.audit{]}}}{113}{section*.158}%
+\contentsline {subsection}{{\color {codeink}\ttfamily {[}net.bind{]}}}{114}{section*.159}%
+\contentsline {subsection}{{\color {codeink}\ttfamily {[}net.bpf{]}}}{115}{section*.160}%
+\contentsline {subsubsection}{{\color {codeink}\ttfamily {[}net.bpf.bind{]}}}{115}{section*.161}%
+\contentsline {subsection}{{\color {codeink}\ttfamily {[}net.ipv6{]}}}{116}{section*.162}%
+\contentsline {subsection}{{\color {codeink}\ttfamily {[}net.proxy{]}}}{116}{section*.163}%
+\contentsline {subsubsection}{{\color {codeink}\ttfamily {[}net.proxy.deny{]}}}{116}{section*.164}%
+\contentsline {section}{{\color {codeink}\ttfamily {[}{[}provides{]}{]}}}{117}{section*.165}%
+\contentsline {section}{{\color {codeink}\ttfamily {[}rootfs{]}}}{118}{section*.166}%
+\contentsline {section}{{\color {codeink}\ttfamily {[}seccomp{]}}}{118}{section*.167}%
+\contentsline {section}{{\color {codeink}\ttfamily {[}service{]}}}{119}{section*.168}%
+\contentsline {section}{{\color {codeink}\ttfamily {[}signature{]}}}{119}{section*.169}%
+\contentsline {section}{{\color {codeink}\ttfamily {[}spawn{]}}}{120}{section*.170}%
+\contentsline {section}{{\color {codeink}\ttfamily {[}ssh{]}}}{121}{section*.171}%
+\contentsline {section}{{\color {codeink}\ttfamily {[}trust{]}}}{121}{section*.172}%
+\contentsline {section}{{\color {codeink}\ttfamily {[}tty{]}}}{122}{section*.173}%
+\contentsline {section}{{\color {codeink}\ttfamily {[}unix{]}}}{122}{section*.174}%
+\contentsline {section}{{\color {codeink}\ttfamily {[}unsafe{]}}}{123}{section*.175}%
+\contentsline {subsection}{{\color {codeink}\ttfamily {[}unsafe.ptrace{]}}}{123}{section*.176}%
+\contentsline {section}{{\color {codeink}\ttfamily {[}workload{]}}}{123}{section*.177}%
+\contentsline {section}{Common forms}{124}{section*.178}%
+\contentsline {chapter}{21. Worked examples}{125}{chapter*.179}%
+\contentsline {section}{{\color {codeink}\ttfamily base-confined} --- the floor every kennel stands on}{125}{section*.180}%
+\contentsline {subsection}{Capabilities (framework invariants)}{125}{section*.181}%
+\contentsline {subsection}{Execution (deny-by-default)}{126}{section*.182}%
+\contentsline {subsection}{Filesystem}{126}{section*.183}%
+\contentsline {subsection}{Libraries}{129}{section*.184}%
+\contentsline {subsection}{Network}{129}{section*.185}%
+\contentsline {subsection}{AF\_UNIX sockets}{131}{section*.186}%
+\contentsline {subsection}{Process introspection}{131}{section*.187}%
+\contentsline {subsection}{Environment}{131}{section*.188}%
+\contentsline {subsection}{Seccomp (defence in depth)}{131}{section*.189}%
+\contentsline {subsection}{Resource limits (off by default)}{132}{section*.190}%
+\contentsline {section}{{\color {codeink}\ttfamily interactive\ (template)} --- the floor made into a usable human shell}{132}{section*.191}%
+\contentsline {subsection}{include\ =\ "core-shell"}{135}{section*.192}%
+\contentsline {subsection}{include\ =\ "core-coreutils"}{135}{section*.193}%
+\contentsline {subsection}{include\ =\ "core-file-mutation"}{136}{section*.194}%
+\contentsline {subsection}{include\ =\ "core-archive"}{137}{section*.195}%
+\contentsline {subsection}{include\ =\ "net-clients"}{137}{section*.196}%
+\contentsline {subsection}{include\ =\ "vcs-git"}{138}{section*.197}%
+\contentsline {section}{{\color {codeink}\ttfamily interactive\ (policy)} --- the thin leaf that pins a workload}{138}{section*.198}%
+\contentsline {subsection}{include\ =\ "toolchain-c"}{140}{section*.199}%
+\contentsline {subsection}{include\ =\ "dev-headers"}{140}{section*.200}%

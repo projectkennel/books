@@ -1,0 +1,180 @@
+# 2. The reference monitor
+
+Host security begins at the first instruction the processor runs. From there a chain is built upward:
+firmware, boot loader, kernel, the login that authenticates a person, each link measured or signed
+by the one before it, decades and fortunes spent on making each hard enough to stand on. It is not
+perfect, but it is real, and the effort behind it is enormous, because rooting trust in hardware and
+carrying it up through cryptography is hard. Where that chain reaches us it has settled one
+thing we can build on: the operator is the only one who can normally take on their uid. The host
+beneath us, and everything outside your own home, we take as given. We do not rebuild the chain. We
+inherit it.
+
+Our work begins where the chain ends. It reaches the uid and stops. It settles who you are and says
+nothing about the code now running as you (Chapter 1). The same confidence has to be carried further
+down, into the workload itself, and that is the hard part. The host's root of trust is something we
+stand on, not something we hold: every privileged thing, every layer hardened over those decades,
+belongs to the chain we inherited, not to us. Beneath it there is no second foundation, only the home
+you own and a uid that, by the host's design, may do anything you may do. What we build has to reach
+down into the workload from a root we did not lay, with no privilege of its own.
+
+A reference monitor (`reference-monitor`) is the structure for it. Anderson named it in 1972
+[Anderson], in the report that set out how a system could enforce a policy it was entitled to trust.
+It is the part of a system that every access passes through, permitting or denying each against the
+policy, and its value is less the checkpoint than the three properties Anderson required before anyone
+relies on one. Those properties have been the measure of an access-control mechanism ever since
+[Irvine]. It must mediate completely: every access, with no path around. It must be tamperproof: the
+code it constrains cannot alter it or switch it off. And it must be verifiable: small and simple
+enough that its correctness can be checked. Miss any one and the other two stop meaning anything. A
+complete, tamperproof monitor no one can verify is trusted on faith; a complete, verifiable monitor
+that can be switched off is a suggestion. The count is three in Anderson and still three in Irvine,
+whose first property, always invoked, means every access is mediated, since whatever goes unmediated
+can be bypassed [Irvine]. A later teaching mnemonic, NEAT, splits that property in two and counts
+four: non-bypassable, evaluable, always invoked, tamper-proof.[^neat] What reads here as complete
+mediation is that first property whole, the monitor on every path and impossible to route around,
+kept as one because a path it never sees and a path that slips around it are the same hole, closed
+below by the same means. The model has a formal account, too. Schneider showed in 2000 that a monitor
+which clears each access as it runs enforces exactly the safety properties, those that forbid
+something bad from happening, with complete mediation and the monitor's isolation from the code it
+watches among the conditions it requires [Schneider].
+
+Anderson's monitor was itself the root of trust: privileged, at the foundation, protecting the system
+from its users. Kennel's root of trust is not the monitor. It is the operator, handed up to us by the
+host's chain, and the monitor sits below it (unprivileged, because the privilege is all upstream),
+carrying that trust down into the code the operator runs. The three properties are unchanged. The
+trust root has moved out from under the monitor to above it, and that shift is the whole of the
+difficulty.
+
+## 2.1 Complete mediation
+
+Complete mediation [SaltzerSchroeder] is the property that a resource cannot be reached except through
+the monitor. Not most ways in. Every way. A monitor that holds the front door and misses a side
+window has not narrowed the attack, it has moved it, and a workload under optimisation pressure
+(Chapter 1) finds the window faster than the designer found the door.
+
+This is the property the familiar boundaries give up. A sandbox or a container decides what is
+reachable and then withdraws; once a thing is reachable, what is done with it goes unwatched.
+Complete mediation is the opposite demand: that use itself is what the monitor governs, every time,
+for as long as the workload runs (`mediate-use-not-reach`).
+
+The difficulty is that completeness is a property of the whole surface at once, and the surface is
+wide. A workload reaches the world through many kinds of resource (files, connections, processes,
+services, devices), and each kind is a place a path might be left open. There are two ways to close a
+path, and only two. The resource can be removed, so there is no access to mediate because there is
+nothing there (`construction-by-absence`). Or it can be interposed upon, so every use is a request
+the monitor answers (`interpose-as-transaction`). The next chapter is those two limbs, and why
+between them they cover the surface. What matters here is the standard they serve: every path is
+either absent or mediated, with no third state in which a resource is present, reachable, and
+ungoverned.
+
+## 2.2 Tamperproof
+
+A monitor the workload can switch off is not a monitor. In Chapter 1 an agent, blocked by its
+sandbox, reasoned its way to disabling the sandbox and carrying on (`T2.1`). It held the controls of
+its own confinement, so its confinement was advisory. Tamperproofness is the requirement that this
+cannot happen: nothing the workload can do reaches the monitor.
+
+For a privileged kernel the property comes close to free. The same boundary that makes the monitor
+more privileged also keeps it out of reach. Kennel has no privilege boundary to lean on. The monitor
+and the workload run as the same user, and a user can in general change what runs as them. So
+tamperproofness cannot rest on the monitor being stronger than the workload. It rests on the workload
+having no handle on the monitor at all.
+
+Two things make that hold. The first is that the boundary exists before the workload does. The
+monitor does not start the workload and then race it to install controls; it builds the confined
+world first, and only then places the workload inside it. There is no moment when running code can
+intercept its own confinement, because at the moment of confinement there is no running code. The
+second is that the monitor's controls are not objects the workload can see. The configuration that
+enforces the policy lives outside the workload's reach: there is no name it can resolve to find it
+and no privilege it can borrow to undo it (`good-boy`: the monitor does not rely on the workload
+choosing not to try). The workload keeps its full ordinary authority over its own world. That world
+simply does not contain the levers of its own cage.
+
+The enforcement is the operating system's, not the monitor's own runtime vigilance. The monitor does
+not stand over each call checking it by hand; before the workload starts, it arranges for the system
+to deny on its behalf, through the system's own unbypassable primitives. The monitor authors the
+policy and builds the world; the kernel makes the denials stick. This is what lets the monitor stay
+small, which is the next property's concern, and it is what makes every attempt to step outside run
+into the floor rather than into a part of the monitor that might be pried loose.
+
+## 2.3 Verifiable
+
+The first two properties are claims, and a claim is worth what it can be checked for. A monitor can be
+complete and tamperproof in its design and wrong in its code, and if the code is too large to read,
+no one will find out which. Verifiability is the requirement that the monitor is small and simple
+enough for its correctness to be established rather than argued. This is where doing less stops being
+taste and becomes a property the other two depend on (`do-less`).
+
+Small has a measure here, not just a sentiment. The trusted part, the code the whole boundary rests
+on, should be small enough for one person to read in full, and arranged so that reading it is
+enough. Two disciplines hold it there. Each component carries at most one source of risk, so a flaw
+in any one stays bounded and none combines the hazards that escapes are built from (`rule-of-1`). And
+the monitor stays out of the data path: it sets a channel up and brokers it, but the bytes that flow
+do not pass through it, so the traffic a workload generates never enlarges the code that has to be
+trusted (`control-not-data-plane`). A monitor that copied every byte would grow with its workload and
+never hold still long enough to be read.
+
+The point of all of it is to take faith out of the chain. The other properties say the monitor cannot
+be bypassed and cannot be disabled. Verifiability is what makes those statements about something a
+person has read, instead of hopes about something too large to.
+
+## 2.4 The same three properties, held against the alternatives
+
+The three properties are a measuring stick, and the existing tools can be held against it. None of
+what follows is a claim that they are bad at what they do; it is that they were built for a different
+problem, and each forfeits on the axis the interactive-user problem needs most. The comparison is of
+approach, not of feature lists.
+
+The hand-rolled sandbox (bubblewrap, Firejail, a seccomp-and-Landlock profile written per app) can be
+mediating and can be tamperproof. Where it gives way is at the granularity of mediation: it confines
+by what the workload can reach, and once a channel is present its use is ungoverned
+(`mediate-use-not-reach`). The policy is assembled by hand for each application rather than derived,
+so verifiability erodes not because the mechanism is large but because the policy is bespoke and grows
+without a discipline to hold it small. It is the right shape for wrapping one known program; it does
+not answer the case of arbitrary code arriving under the user's own identity.
+
+The mandatory-access-control layer (SELinux, AppArmor) is kernel-enforced and genuinely tamperproof,
+and mediates more than a reachability sandbox does. Its forfeit is elsewhere: the policy is
+system-global and authored by the distribution, not by the operator per workload, and it governs how
+the system's services are labelled rather than confining a single untrusted thing the user just ran.
+The trusted surface is the whole labelling model, which is not a thing one operator reads in an
+afternoon, and the problem it solves is the system's integrity, not the interactive user's authority
+over code running as them.
+
+The container (Docker, and the rootless engines) isolates by namespace, which is real, but it draws a
+line and steps back rather than mediating across it: inside the box the workload is typically root,
+and the boundary is the box wall, not a monitor on each access. The controlling daemon is
+root-equivalent, so the trusted base is large and privileged. It is an isolation model for shipping
+and running a service, and it neither keeps the workload off the user's own authority
+(`split-the-uid`) nor governs use once a socket or mount is inside the box.
+
+The virtual machine, and the microVM built for this exact fear (Firecracker, gVisor as its
+in-between cousin), is the strongest of the four on the first two properties: a separate kernel or a
+separate machine mediates completely and is hard to tamper with from inside. The forfeit is the shape
+of the boundary against the shape of the problem. A machine-per-task has no native view of the user's
+own home, so the workload's world is either a copy of the operator's state, stale and needing
+reconciliation, or a share of it, which is the thing being defended against. Tasks in separate
+machines do not compose laterally; where this design lets one confined service reach another by name
+(the mesh, taken up in Parts II and III), the machine model makes that reach a heavyweight crossing
+rather than a brokered call. And a boundary stood up per task carries a standing cost an operator
+running many short-lived tasks pays over and over; how small that cost is here, and how much of the
+appeal rests on it, is a measurement the second volume makes and this one only asserts. The VM answer
+is correct for a hostile tenant on shared hardware. It fits the interactive user, working with their
+own files under their own identity, badly.
+
+The through-line is that the sandbox governs reach not use, the MAC layer governs the system not the
+workload, the container isolates rather than mediates, and the VM confines by separation from
+everything including the user's own state. Each is sound for the problem it was built for. The
+interactive-user problem, code running as you that you did not write, is a different one, and holding
+the three properties against it is what the rest of this volume does, one resource class at a time.
+
+The three properties are one requirement in three parts. Complete mediation puts every access in
+front of the monitor. Tamperproofness keeps the workload's hands off it. Verifiability makes the
+first two checkable instead of hoped for, and the design earns each separately: completeness by
+closing every path, tamperproofness by building the boundary before the workload and out of its
+reach, verifiability by staying small enough to read. Where the boundary cannot be built, the
+workload does not start, because an unconfined workload is the one result the monitor must never
+produce (`refuse-to-start`). That leaves the first property's two methods still to work out: a
+resource made absent, or a resource interposed upon. Those are the two limbs, and they are the next
+chapter.
+
+[^neat]: See *Reference monitor*, Wikipedia. <https://en.wikipedia.org/wiki/Reference_monitor>

@@ -1,0 +1,240 @@
+# 14. The service mesh
+
+A single kennel is complete on its own. It holds the capabilities its policy grants, reaches nothing else, and
+two kennels are mutually invisible by default. A mesh is the deliberate exception: a workload that uses a
+capability another confined kennel provides, with neither kennel holding the other's authority. A desktop
+application reaches a display server it does not run; an application reaches a cache without seeing the process
+behind it. The lateral model holds throughout, provider and consumer siblings under the daemon and neither
+nested in the other, and the only thing that crosses between them is the one connector the operator declared and
+the daemon brokered.
+
+One declaration carries the whole surface. A provider lists each capability it offers under `[[provides]]`, by a
+public name, a typed shape, and the `endpoint` where it exposes the capability in its own view; a consumer lists
+each it reaches under `[[consumes]]`, by the same name and shape and the `at` where the broker presents it for
+the workload to act against.
+
+```
+# in the provider's policy
+[[provides]]
+name = "org.projectkennel.dbus-broker"
+shape = "binder-connector"
+endpoint = "/dev/binderfs-mesh/binder"
+reason = "push per-session ACCEPT_SESSION to the broker's control node on the mesh bus"
+
+# in a consumer's policy
+[[consumes]]
+name = "org.projectkennel.dbus"
+shape = "dbus-name"
+required = true
+reason = "reach the standing D-Bus broker's mediation over the connector mesh"
+```
+
+Neither side names the other. A consumer names the capability the way a client
+names a service, never the process behind it, and nothing in either declaration points at another kennel, so
+there is no cross-kennel reference anywhere in the policy surface to resolve at compile. The shape names the
+transport, and the surface carries three: `af-unix`, `dbus-name`, and `binder-connector`. The `af-unix` shape
+the broker delivers directly and the display service rides it; the other two ride the mesh bus, taken up where
+the mesh is (§14.6). Everything before that holds for
+all three, because declaration, catalogue, matching, and enablement are shape-agnostic and only the final
+handoff is not.
+
+## 14.1 Compile-local, resolve at runtime
+
+A cross-kennel match cannot be settled when a policy is compiled, and the design does not pretend otherwise.
+Policies are compiled and signed independently, so the compiler only ever holds the one policy in front of it,
+and the providers that can answer a consume are whatever the operator has installed by the time the workload
+reaches for it, not whatever existed when the consumer was signed. A signed artefact cannot be made to depend on
+the presence of another mutable, independently authored one, and resolving a consume against the known kennels
+at compile has no known kennels to resolve against. Matching is therefore a runtime property, and putting it
+anywhere else would be a guarantee the system could not keep.
+
+So the two checks live in two places. At compile, the validation is local: each declaration is well-formed, the
+shape is one of the defined transports, a reserved name traces to a template signed by a key authorised for it
+(§14.4), and no two `[[provides]]` in the one policy claim the same name. None of these consults another kennel,
+so all of them hold on a signed artefact for its whole life. At runtime, the broker resolves a consumer's name
+against the catalogue, requires the optional key to match, enforces the expected shape, and applies the
+deny-by-default identity check. A consume marked `required = true`, the default, has its name checked for
+resolvability at construction, and a kennel whose hard dependency nothing provides fails to start rather than
+run missing something it needs (`refuse-to-start`); a `required = false` consume is skipped when unavailable and
+the workload tolerates the absence, the systemd `Requires=` and `Wants=` distinction evaluated against the
+installed set. Tooling may report which of a deployment's consumes currently resolve, but that is an operator
+diagnostic over a set that changes the moment a service is added or removed, explicitly advisory and never a
+signature gate.
+
+## 14.2 Deny-by-default and the broker
+
+Authorisation is the consumer's signed `[[consumes]]` and nothing else. A kennel reaches a capability if and
+only if its own operator-signed policy declares a consume for it, and a kennel with no such declaration reaches
+nothing. The provider is passive: it offered the capability, and the operator decides who uses it by what it
+signs into each consumer's policy, never by an allowlist the provider maintains. This keeps the provider
+decoupled from its consumer set, the display service needing no knowledge of which applications render through
+it, and it is the same shape as the rest of the system, where a capability is granted on the kennel that uses it
+exactly as egress is granted on the consuming kennel and not as an allowlist on the destination.
+
+When a workload first acts against its `at`, the broker runs a fixed sequence, each step a lookup or an equality
+rather than a fresh policy evaluation. It checks the request against the consumer's kernel-stamped identity and
+confirms the signed policy declares this consume, so the workload can request only what its policy already
+grants and cannot widen it (`request-dont-author`). It resolves the name against the catalogue to a single
+provider. It requires the optional key to match exactly, where the key is a discriminator both sides set to the
+same opaque value, so a keyed consumer is never brokered to a keyless provider and the public name a different
+kennel could also advertise does not by itself land a consumer at the wrong one. It enforces the expected shape,
+refusing a mismatched transport rather than misdelivering. Then it activates the provider if it is cold, bridges
+the connection, and steps out of the byte path. A failure at any step, no installed provider, a shape that
+disagrees, a key that does not match, is a denial and an audit record, never a silent fallback to some other
+provider.
+
+Two properties of the name keep the broker honest. A reserved `org.projectkennel.*` name is claimable only by a
+template signed with the project maintainer key, so a workload cannot advertise the display service's name and
+have a consumer brokered to an impostor, the provider-name spoof the catalogue would otherwise carry. And a
+public name offered by more than one enabled provider is never collapsed to no winner: collapsing would let one
+provider revoke a name another serves merely by also claiming it, a denial of service by name-claim, so a second
+claimant adds a candidate and can never empty the name, the broker selecting among candidates by key and then
+by the per-user-over-per-host cascade. Through all of it the daemon brokers the connector and parses none of
+what rides it, which is what keeps it from becoming the relay its centrality would otherwise make it
+(`control-not-data-plane`, T5.3).
+
+## 14.3 The catalogue is the filesystem
+
+The catalogue the broker resolves against is not standing daemon state. It is a derived projection of the
+signed `[[provides]]` blocks of the providers the operator has enabled, and enabled means linked: the operator
+turns on what a vendor provides by placing a symlink to its signed policy into an enablement directory, eager
+in `autorun/` or lazy in `ondemand/`. The split between what the signature covers and what the link covers is
+deliberate. The signed provider policy carries the capability and the supervision discipline, what the service
+is and how it tolerates its own crashes, which is the author's to vouch for; whether it autostarts, and whether
+eagerly or lazily, is the operator's deployment posture, expressed solely by which directory holds the link and
+kept out of the signed artefact. A vendor cannot bake autostart-on-every-host into a signed policy, and an
+operator cannot alter a service's restart discipline without re-signing it. Each side owns exactly its half.
+
+Because the enabled set is the links on disk, `kennel daemon-reload` re-scans the enablement directories,
+re-derives the catalogue, brings newly linked eager providers online, and makes newly linked lazy providers
+resolvable without starting them; removing a link and reloading drops the capability and stops an eager
+provider. The filesystem is the registry, re-read on every reload and on daemon restart, so the daemon holds no
+enabled-set state a restart could lose or a bug could desynchronise.
+
+The lazy posture is what makes a capability reachable before its provider runs. A provider linked into
+`ondemand/` is socket-activated on the first consume, the daemon doing for a provider kennel what systemd's
+socket activation does for the daemon itself, while an eager provider is simply already up. This is why delivery
+is a socket the workload connects to and not a connected descriptor handed in at the workload's own
+construction: an inherited descriptor would have to exist before any consumer reached for it, which forces the
+provider up eagerly and defeats the lazy model, whereas a socket standing in the consumer's view from
+construction costs nothing while idle and makes the connect itself the trigger that resolves and activates the
+provider. A connect against a cold provider therefore blocks until the provider is ready or a deadline fires, a
+broker constant defaulting to five seconds, and a provider still pending does not satisfy a waiter. That single
+rule makes the flat, boot-order-free model safe under a dependency cycle: two services that consume each other,
+both enabled eager, each block on the other's readiness, both hit the deadline, and both resolve to a loud,
+observable double-timeout visible in the topology surface rather than a silent deadlock. A brokered connector is
+a live handle and not a standing guarantee, so when a provider restarts or dies its consumers observe an
+end-of-file and re-request the capability, which re-resolves and activates afresh; the mesh guarantees a
+connection to the named capability on request, never the same connection for the kennel's life.
+
+## 14.4 Supervision and the service-kennel trust class
+
+A provider the operator enables is a kennel the daemon keeps running on the operator's behalf, so it carries the
+one thing an ephemeral spawn does not, a supervision discipline declared in a `[service]` block and signed into
+the policy. The block names a restart policy, a backoff that doubles on each successive attempt so an
+immediately crashing provider does not spin the supervisor, and a bound on attempts within the crash-loop
+window. An enabled provider is in one of three readiness states the catalogue projects and the topology surface
+reads: declared-but-pending, enabled and known but not yet constructed; declared-and-ready, reachable, a
+consumer's connect bridging straight through; and declared-but-failed, where construction or supervision gave
+up. A failed provider stays in the catalogue, so its failure is visible and a consume against it is denied and
+distinguishable from no-such-capability, and it is terminal until the operator intervenes, a failure made
+sticky and observable rather than self-clearing.
+
+Who may claim a name is the load-bearing gate, because the name is the thing a consumer trusts: a kennel that
+resolves `org.projectkennel.wayland` is trusting whatever the mesh brokers it under that name to be the display
+service. The `org.projectkennel.*` namespace is the project's own, built in and claimable only by a
+maintainer-signed template, the same unit of trust a spawn target uses; an unreserved name is freely authored
+and signed by any valid key. A maintainer-signed reserved template is not frozen whole, exposing the bits a host
+legitimately varies as the same fenced mutable fields a spawn target declares, so a host runs a different inner
+compositor without re-authoring the reserved name or escaping its trust. A host may additionally reserve its own
+namespaces in the root-owned deployment config, purely additive and never able to redefine the project's.
+
+The service-kennel trust class carries one deliberate widening of the single-leg discipline. The rule that an
+agent-composable spawn target holds at most one leg binds what an untrusted agent composes, because holding two
+at once would let it reconstitute across one kennel a capability the operator never granted whole. A service
+kennel is not that: it is a maintainer-signed template the operator deliberately enabled, vouched for by both
+the signature and the enablement, so it may hold several legs, the GUI service the worked member of the class.
+The exemption widens how many legs a service kennel holds,
+never what kind. It may vend capabilities a consumer uses, render, transport, reach a destination, but never
+capabilities whose purpose is to be trusted, a secrets broker or a signing service, which would place a trust
+root inside the boundary the project exists to confine (`authentication-never-attestation`). Trust material a
+kennel needs arrives as a signed construction parameter from the operator, never brokered from a peer at
+runtime. The consume grant is loud, each declaration carrying a reason surfaced in the risk report, and the
+standing shape leaves two narrowed residuals the catalogue records: a provider is a shared target whose
+compromise reaches every consumer it serves for its lifetime, and the brokering edge is a standing addition to
+the daemon's always-present surface, bounded by the parse-nothing discipline rather than removed (T3.10).
+
+## 14.5 The af-unix shape
+
+The delivered shape is `af-unix`, and its handoff is the same fd-broker every other capability rides. On a
+successful consume the broker attaches a connected descriptor to the provider, the byte path the daemon then
+steps out of. Where that descriptor connects is a host-owned rendezvous point: the daemon derives a
+per-capability directory under its runtime root from the signed catalogue triple of tier, name, and optional
+key, binds that directory into the provider's view at the parent of its declared endpoint, and connects to the
+host-side inode the provider binds its socket on, a bind mount being one inode set seen from two namespaces.
+This is byte-for-byte the host-socket facade that brokers an ordinary `[[unix.allow]]` socket, pointed at a
+provider's endpoint instead of a host path, and it binds a provider's own capability directory alone rather
+than a shared parent, so a provider sees only its own rendezvous socket and every cross-kennel reach stays
+brokered and deny-by-default. The confined display service is the first non-trivial consumer of all of this, its
+host-compositor leg riding this shape.
+
+## 14.6 The mesh bus
+
+A capability that crosses between two kennels needs a binder instance both can reach, and a kennel's own bus is
+private to it, so the mesh shapes ride a different one. The mesh bus is a single binder instance distinct from
+every per-kennel bus, with `kenneld` on its node 0, on which a provider registers a node by `ADD_SERVICE` and a
+consumer receives a handle to that node by `SVC_CONNECT`. The per-kennel bus carries a kennel's calls to the
+daemon; the mesh bus carries one kennel's reach to another, and the daemon holds node 0 of both.
+
+The instance exists where an unprivileged daemon cannot ordinarily put it. Mounting a binderfs needs the
+capabilities a user namespace confers, which `kenneld` holds only inside one it creates, so the mesh binderfs is
+mounted by a child the daemon forks for the purpose. The child stays under the daemon's own AppArmor profile,
+which carries the user-namespace grant across a fork and not across an exec, so the fork is load-bearing where
+an exec would lose the grant. It maps itself to the daemon's uid in a single-uid namespace, unprivileged and
+with no subordinate uids, mounts the binderfs, and the nodes it creates are owned by the daemon's own uid.
+`kenneld` serves node 0 by opening the device through the holder's `/proc/<holder>/root`, the same reach by
+which it holds node 0 of every per-kennel bus, pointed at the holder instead of an init. No privileged helper
+takes part: the mount the privilege model refuses the daemon directly is the one it makes for itself inside a
+namespace it is sovereign over.
+
+Exposing the device into a consumer's view is a second problem, because the mount lives in the holder's mount
+namespace and a kennel's construction has a private pid namespace in which `/proc/<holder>/root` does not
+resolve. A path cannot cross that gap, so a mount does. The holder, the one namespace that has the mount, clones
+it detached and movable with `open_tree`, and `kenneld` relays the descriptor to the kennel's init over a
+datagram the init binds at a fixed point in its view. The init moves the clone into place at
+`/dev/binderfs-mesh` and adds the device to the workload's filesystem ruleset before it forks the workload, so
+the broker and facade that use the bus open it by an ordinary path and know nothing of how it arrived. The clone
+shares the original's superblock, so a transaction on it crosses the user-namespace boundary intact, the
+property the whole arrangement rests on and the one most worth having measured rather than reasoned.
+
+## 14.7 The brokered shapes
+
+On the mesh bus the two declarable shapes deliver as their grammar promised. A `binder-connector` consume
+returns the provider's node handle, which the consumer reaches by name with whatever rides it opaque to the
+daemon. A `dbus-name` consume mints no socket: on the per-kennel bus the daemon answers the consumer's locator
+with the mesh device's path, and the consumer's existing D-Bus facade opens the mesh bus and reaches its broker
+there, so a brokered name widens an allow-set the facade already had rather than opening a new route.
+
+The broker that name reaches is itself a kennel. A standing service kennel runs `dbus-broker`, holding one
+control node on the D-Bus mesh bus that only `kenneld` addresses, and the single verb on it is `ACCEPT_SESSION`:
+the daemon tells the broker to admit one session under a named filter, the broker mints a fresh per-session
+node, stores the filter against that node's cookie, and returns the node. `kenneld` forwards it to the consumer,
+which then speaks to the broker directly on its own session node, send and receive and close, with the daemon
+out of the byte path as everywhere else. When the consumer drops the session node its release tells the broker
+to reclaim the session. The daemon relays no frame; it authorises a session and steps aside.
+
+What the broker enforces against is the consumer's identity, and the daemon resolves that without holding a
+table. On each connect it reads the kernel-attested pid of the caller, resolves that pid's cgroup to the kennel
+context the cgroup names, and looks up that context's one settled D-Bus filter. The cgroup is the
+restart-invariant name of the kennel, so a facade that restarts under a fresh pid resolves to the same
+identity, and the only standing state is the policy held against the context and dropped when the context is
+released. There is no session cookie to forge and no per-connection identity to leave stale.
+
+The mesh bus is where the cross-kennel relay residual concentrates, and delivering the shapes does not dissolve
+it. A legitimately granted edge is a channel like any other, so a provider a consumer is entitled to reach can
+answer across that reach, and a compromised provider can use the edge it was granted (T5.2). The grant is the
+consumer's to make and the daemon brokers rather than relays, which holds the residual to edges an operator
+signed, but a signed edge is real authority once given. The declaration surface, the catalogue, the matching,
+the supervision, and the enablement treat all three shapes alike, so the mesh shapes are the af-unix shape's
+siblings and not a second grammar (`make-invalid-unrepresentable`); what differs is only the transport the
+daemon brokers, never the way a consumer asks.

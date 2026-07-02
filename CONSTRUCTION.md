@@ -1,0 +1,124 @@
+# Project Kennel: Construction Principles
+
+These are the postures the code and architecture hold to, sorted in three small categories: Stance,
+Supply and Construction. Where the design register states what the system is and why, these state how
+its code is built, under a reader who does not trust the author. They are construction, not design.
+
+Each rests on a section of the coding standards, cited as §N. The standards state the rules; this
+register states the postures they serve. Where a construction principle is a design principle realised
+in code, the design slug is named: the two registers meet at the altitude line, posture above and
+mechanism below.
+
+What is not here is the working discipline: how a claim carries its evidence, how a change earns its
+place, how the tests are written before the implementation they check, how a contradiction between the
+substrate and the corpus is surfaced rather than patched. Those govern the people and the process, not
+the landed artefact, and they live in the coding standards and the standing orders. This register holds
+only what shows up in the code and the architecture.
+
+## Stance
+
+### read-by-the-hostile
+
+The reader does not trust the author. Code in the repository is read line by line by people who assume
+it is hostile until they have satisfied themselves it is not, and the bar it is held to is OpenSSH and
+libpam: auditable in full, by a stranger, with the author absent to explain it (§1). This is `good-boy`
+turned on the code itself. A design that refuses to ask the workload to be trustworthy cannot be
+implemented by code that asks the same of its reader. So the code is written to be checked, not
+believed: small enough to read, plain enough to follow, arranged so a reviewer can confirm a property
+rather than take it on faith. Cleverness that buys a line and costs an hour of reading is a net loss,
+because the hour is paid by everyone who audits the system and the line is saved once.
+
+### built-to-outlast
+
+The code must compile, test, and run the same way on the next long-term-support distribution five years
+from now (§2). The toolchains are pinned, the build is offline against vendored sources, and release
+builds are reproducible hash for hash on two independent runners, so that what shipped can be rebuilt
+and checked long after the machine that built it is gone. A confinement tool an auditor cannot reproduce
+is one an auditor cannot trust, and trust that cannot be re-established on a fresh machine is trust with
+an expiry date. The cost of writing against a moving substrate is paid once by the author; the cost of a
+build that cannot be reproduced is paid by every future reader, so the trade runs one way.
+
+## Supply
+
+### own-your-supply-chain
+
+Every dependency is attack surface and audit burden, and the default answer to taking one is no (§5).
+What the standard library and the existing tree already provide is tried first; the question is not
+whether a crate exists but whether the thing could be written in a day and maintained without
+embarrassment. What is taken is pinned to an exact version, vendored as the audited bytes, and checked
+against an independently computed manifest rather than a hash the registry vouches for, because trust on
+first use against a registry no one controls is not a defence. This is `do-less` on the supply chain:
+the smaller the set of things outside the tree the system must trust, the smaller the set that can
+betray it. A hand-rolled loader that replaces a thousand vendored files is not reinvention; it is the
+refusal of a dependency whose cost outweighs its saving.
+
+### dont-roll-your-own
+
+The opposite error is hubris, and the discipline refuses it as hard. Cryptography, transport security,
+compression, character-set decoding, the hardened parsers where a subtle bug is an exploit: these are
+minefields cleared over decades by specialists, and a fresh implementation forfeits the thousands of
+hours and eyes the existing one already carries (§5.1). Here the tree admits the dependency. The line
+between this and `own-your-supply-chain` is one question asked plainly: can we audit our own version in
+full, and would it earn as many eyes as the thing it would replace. Yes to both and the dependency is
+bloat; no to either and reimplementing is recklessness. The two halves are one rule reading its inputs,
+which is why a small reviewable loader and a refusal to write our own signature scheme are not a
+contradiction.
+
+The project's one crypto primitive shows the pair deciding together. A solid security primitive was
+needed and was never going to be written here, so the only question was which to depend on, and the
+answer was the smallest vetted one. Among the candidates, rustls was about 35,000 lines on its own and hundreds of thousands once its
+dependencies were counted; a sha256 crate was under 400 lines in itself but close to 8,000 with its
+tree; ed25519 came to about 800 lines all in, and won on total footprint, the least code to read that
+still does the job. The gap between each pair of figures is the lesson: the size of the thing you came
+for tells you nothing, because a dependency costs the whole tree it drags in, not the leaf. The direction is worth marking too: ed25519 is in the tree because supply chose the
+smallest vetted primitive, and the trust material the design register spends is spending what supply
+admitted, rather than the reverse.
+
+## Construction
+
+### parse-dont-validate
+
+Every byte that enters from outside is untrusted until parsing has produced a typed value, and the
+parse is the validation, not a check bolted on after (§10). A typed value is evidence that the checks
+the type requires have run; raw input has no standing until it has become something the rest of the
+program is allowed to hold. Configuration is not exempt and is the sharp case, because a file looks like
+an internal artefact and draws less scrutiny than network bytes while arriving from templates fetched
+over the wire, deltas hand-written, caches that may have been tampered with, and the very agents the
+system exists to confine. Unknown fields are rejected, reads are bounded before they begin, and the
+crossing is visible in the code as a parser call rather than a silent conversion. This is
+`mediate-use-not-reach` and `construction-by-absence` at the type boundary: a constructed value is a
+mediated one, and what was never parsed was never admitted.
+
+### make-invalid-unrepresentable
+
+Where a value carries security meaning it is a newtype whose constructor does the validation, and where
+an invalid state is forbidden by invariant it is removed from the type rather than checked at runtime
+(§11). A forbidden flag is not a boolean someone must remember to test; it is a shape that cannot be
+built. The constructed type is the proof the check happened, so the proof cannot be skipped without the
+value failing to exist. This is `construction-by-absence` carried into the type system: the same move
+that makes a withheld resource absent from a workload's world makes an invalid state absent from the
+program's, and in both the gain is that there is nothing left to guard, because there is nothing left to
+be wrong.
+
+### errors-not-panics
+
+Shipped code has no unhandled path (§8). There is no `unwrap`, no `panic!`, no `todo!` in anything that
+ships; every fallible thing returns a typed error specific enough to act on; and the one permitted
+`expect` carries, in its message, the invariant that makes it infallible, so the claim of safety is
+written where a reader can check it. At a trust boundary an error is an expected outcome, not an
+exceptional one, given a named variant and an audit record rather than a crash. This is `refuse-to-start`
+in the small: a component that meets a condition it cannot honour stops cleanly and says so, rather than
+proceeding on a value it had to assume. The privhelper goes further and aborts rather than unwind,
+because unwinding through cleanup it cannot trust is a worse failure than stopping.
+
+### quarantine-the-unsafe
+
+`unsafe` and C are quarantined into a few small, single-purpose crates, each sized to be read in a
+single sitting, and every other crate forbids `unsafe` outright (§3, §4). The syscall and BPF glue that
+no safe abstraction covers is concentrated where two maintainers must read every block, not spread thin
+across the tree where each instance escapes notice. This is the design register's `rule-of-1` realised
+in the workspace: the hazard that cannot be removed is gathered into the few crates that carry it and
+nothing else, each holding one narrow purpose, so a bug in the unsafe code is bounded by the small crate
+that holds it. It composes with `dont-roll-your-own`: lean on a vetted crate to avoid the unsafe you do
+not have to write, and quarantine the irreducible remainder no crate covers. Avoid what you can, gather
+what you cannot.

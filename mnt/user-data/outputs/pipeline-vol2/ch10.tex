@@ -1,0 +1,208 @@
+\hypertarget{cryptographic-services}{%
+\chapter{10. Cryptographic services}\label{cryptographic-services}}
+
+The local-services chapter brokered the agent sockets a workstation
+runs, and set one of them aside. An ssh-agent could not be handed
+through the same facade as a keyring or a display socket, and the reason
+it could not is the subject here. Signing is the capability where the
+broker pattern meets its edge: for one kind of signing the edge is a
+construction problem the framework solves, and for another it is a line
+the framework will not cross. The difference between the two is the
+whole of the chapter, and it is the difference between proving who you
+are and vouching that something is so.
+
+\hypertarget{the-signing-oracle}{%
+\section{10.1 The signing oracle}\label{the-signing-oracle}}
+
+The obvious way to let a kennel use the operator's SSH key is to expose
+the agent socket into it, and it is wrong in a way that is worth being
+precise about. The ssh-agent protocol carries an opaque blob to be
+signed, not a destination. An agent, or a filtering broker placed in
+front of one, can bound which key signs but never which host the
+signature authenticates to, because the host is nowhere in what the
+agent sees. A workload that holds the socket ignores the curated client
+config it was given, opens the socket itself, and asks for a signature
+over a challenge it built for a host of its own choosing. The key that
+was meant for one server now authenticates the workload at every server
+that accepts it. The agent is a destination-blind signing oracle, and
+filtering the client the workload is free to bypass constrains nothing.
+The conclusion the design draws is flat: the workload holds no key and
+no agent socket, and it does not choose its own destination.
+
+\hypertarget{re-origination}{%
+\section{10.2 Re-origination}\label{re-origination}}
+
+What replaces the agent is a bastion that re-originates the connection,
+and the mechanism turns on a synthetic key that is itself the
+destination. For each destination a kennel is granted, the toolchain
+mints a throwaway ed25519 keypair at compile time; the private half
+lands in the kennel's constructed \texttt{\textasciitilde{}/.ssh}, and
+the public half is recorded in the signed policy and bound to a forced
+command that already names the destination and the operator's host-side
+options for reaching it. The binding is one \texttt{authorized\_keys}
+line:
+
+\begin{kennelcode}
+restrict,pty,command="ssh '-i' '~/.ssh/id_gh' -- 'git@github.com' \"$SSH_ORIGINAL_COMMAND\"" ssh-ed25519 AAAA...
+\end{kennelcode}
+
+The destination is the literal \texttt{git@github.com} baked into the
+command, fixed by which synthetic key authenticated and never parsed
+from anything the workload sends. The workload controls only
+\texttt{\$SSH\_ORIGINAL\_COMMAND}, the remote command, forwarded as a
+single argument; it cannot rewrite the line, reach any other host, or
+authenticate at all with a key the policy did not mint. There is no
+oracle, because each key is a capability for exactly one destination.
+
+That line lives in no file the bastion could read or a workload could
+rewrite. On every authentication the bastion's \texttt{sshd} hands the
+offered key to a root-owned helper and takes the answer as the key's
+authorisation:
+
+\begin{kennelcode}
+AuthorizedKeysFile none
+AuthorizedKeysCommand /opt/kennel/bin/kennel-akc %t %k
+AuthorizedKeysCommandUser root
+ExposeAuthInfo yes
+\end{kennelcode}
+
+The helper, \texttt{kennel-akc}, forwards the offered key to the running
+\texttt{kenneld} over the control socket and prints back the
+forced-command line bound to it, or nothing, in which case the login is
+refused. The bindings exist only in the daemon's memory, sourced from
+signed policy, so the answer is the daemon's live verified edge state
+rather than a file the unprivileged bastion user could edit, and any
+failure at all, no daemon or a garbled key or an unexpected reply,
+prints nothing and fails the login closed. The helper is installed
+root-owned because OpenSSH refuses an \texttt{AuthorizedKeysCommand}
+that is not. The helper read the offered key from the \texttt{\%t\ \%k}
+arguments; \texttt{ExposeAuthInfo\ yes} separately hands the forced
+command the identity of the key that authenticated, as
+\texttt{\$SSH\_USER\_AUTH}, so the lookup and the running session learn
+the key by different routes, argv for the one and the environment for
+the other.
+
+The forced command is the only thing a session may do, and the rest of
+the bastion's configuration is hardened to keep it that way:
+
+\begin{kennelcode}
+PubkeyAuthentication yes
+PasswordAuthentication no
+PermitRootLogin no
+UsePAM no
+AllowTcpForwarding no
+X11Forwarding no
+AllowAgentForwarding no
+PermitTunnel no
+PermitOpen none
+AllowStreamLocalForwarding no
+Subsystem sftp /bin/false
+\end{kennelcode}
+
+Publickey login only, no agent to forward and so none to re-export as an
+oracle, every forwarding and tunnelling avenue shut, and SFTP wired to a
+binary that does nothing. A session that authenticates runs its one
+forced command and has no other move. The file is the surfaced template,
+admin-tunable through a root-owned cascade but never weakenable by the
+workload, which cannot write the paths it resolves from.
+
+The kennel reaches the bastion over the same egress proxy chapter 8
+builds, with no SSH-specific transport of its own: the kennel's network
+policy allows only the bastion's loopback endpoint as a host service,
+and \texttt{host-netproxy} dials it as it dials any other egress target.
+On a connection the bastion's forced command runs, as the operator and
+with no added privilege, an \texttt{ssh} to the bound destination,
+dialed host-side and so outside the kennel's egress entirely, and that
+outbound \texttt{ssh} signs with the operator's real key from the
+operator's own host-side store, against the destination the bastion
+fixed. The real key never enters the kennel. The kennel's
+\texttt{\textasciitilde{}/.ssh} is a tmpfs subtree holding only the
+disposable synthetic keys and a generated read-only config that points
+every host at the bastion; the operator's real keys, real config, and
+real \texttt{known\_hosts} are absent by construction rather than by a
+deny rule, never built into the view (\texttt{construction-by-absence}).
+Because the real signature is bound host-side to a destination the
+workload could not choose, reusing one host's key against another is not
+a rule that can be broken but a path that does not exist (T1.6).
+
+\hypertarget{where-re-origination-stops}{%
+\section{10.3 Where re-origination
+stops}\label{where-re-origination-stops}}
+
+Re-origination works for SSH because a signature there authenticates to
+a host, and a host is a property the bastion can verify and bind a key
+to. Commit signing has no such property, and the same fix does not reach
+it. A signature on a commit is not aimed at a destination that could be
+fixed; its worth is that the operator's identity vouches for the bytes,
+and it incorporates itself into the hash it covers, so there is nothing
+host-side a facade could check and bind its decision to. Behind the
+technical mismatch is the axiom that settles the matter. A kennel exists
+to contain code the operator does not trust. A signature made as the
+operator, by code running inside that boundary, stamps the operator's
+verified identity onto whatever the workload presents, a release, a
+forged commit, malware, and it does so permanently, not for one live
+session. That is a trust root placed inside the very boundary the
+project exists to confine, which is incoherent: a claim with nothing
+behind it.
+
+So the framework does not build a signing facade, and it refuses to
+pretend one is safe. An exposed gpg-agent is the same destination-blind
+oracle as the ssh-agent, worse for stamping a durable artefact rather
+than authenticating a transient session. A grant of it compiles and
+runs, unlike the bus services chapter 9 turns away at compile, and the
+split is the same rule §9.4 drew: the raw agent socket is a dumb connect
+the operator owns, not a facade the framework builds and vouches for, so
+it warns where a mediated signing service would be refused. The compiler
+derives a risk from it that \texttt{kennel\ policy\ risks} surfaces
+against the operator's reason: a loud footgun the operator may still
+pull, not a sanctioned path (\texttt{footgun-warn-dont-forbid}). What
+the axiom forbids is attesting as the operator, not signing as such, and
+an operator who does want a kennel to sign has a clean way to get it.
+The answer is a separate identity: an ordinary signing keypair the
+operator generates for the workload, distinct from their own, its
+private half granted through the ordinary read allowlist as a readable
+file in the view. No new machinery and no agent, so no oracle to abuse;
+the workload reads the key and signs in-process as that identity, and
+the signature is worth exactly the trust of an identity the operator
+stood up on purpose, read by a verifier as the workload's and never as
+the operator's. The line the axiom draws runs between those two
+identities, not against signing itself, which is the design volume's
+rule (§8.2) in mechanism: refuse the standing to vouch as the operator,
+grant without ceremony the standing to vouch as an identity the operator
+raised for the purpose. Where no separate identity is wanted, the plain
+path remains: the workload commits unsigned, and the human signs on
+review, before the push, from outside the kennel.
+
+\hypertarget{the-line-generalised}{%
+\section{10.4 The line, generalised}\label{the-line-generalised}}
+
+The split under SSH and signing is the general shape of every capability
+the monitor brokers, and naming it keeps future facades honest. A
+capability is authentication-shaped when it is a constrained,
+host-verifiable act the monitor can bind to a checkable property: may I
+reach this host, may I open this connection, may I render this frame.
+Those are what interposition exists to carry, and the bastion is the
+worked proof that a dangerous one can be made safe by binding it to the
+property that makes it checkable. A capability is attestation-shaped
+when its worth derives entirely from the trust of its origin: vouching,
+signing, issuing a secret, trust that this is so. A kennel's origin is
+confined and untrusted by construction, so a kennel that attests to
+others is a trust root in the wrong place, and the category is refused
+rather than merely unbuilt (\texttt{authentication-never-attestation}).
+No broker the monitor grows, present or future, may be a secrets broker
+or a signing service, and routing the act through a keyring or a TPM or
+a vault does not rescue it, because it only moves the attestation to a
+claim of being authorised to retrieve on the workload's behalf, which is
+authority the broker still cannot vouch for.
+
+The positive form of the same line is where trust material legitimately
+enters a kennel. What a workload needs to hold, it holds because the
+operator placed it there: a secret a kennel needs arrives as a signed
+construction parameter, present in the view because construction put it
+there, never handed to the kennel by a peer at runtime. A hardware token
+follows the same rule from the other side. Its touch is the operator's
+presence, so it is used host-side by the bastion's outbound
+\texttt{ssh}, where the touch happens on the operator's own hardware,
+and the device is never bound into the kennel, because a workload that
+could drive the authenticator directly would have turned the presence
+check into one more thing it signs.

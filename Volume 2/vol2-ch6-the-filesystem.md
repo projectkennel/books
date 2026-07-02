@@ -1,0 +1,150 @@
+# 6. The filesystem
+
+Part I built the machinery: the kernel facilities woven into a confinement, the processes that hold it, the
+bus, the trusted base, and the surface that drives it. Part II turns to the resource classes that machinery
+confines, a mechanism at a time, and it starts with the filesystem, because the filesystem is where the
+project's motivation lives. The thing a kennel must not see is the user's real home directory, with its keys,
+its tokens, and its shell history, and the account of how a kennel does not see it is the account of the
+filesystem.
+
+## 6.1 The view and the access
+
+Filesystem confinement is built from both limbs at once, and the design is explicit that neither alone is
+enough. The construction limb is the view: a mount namespace and bind mounts assemble what the kennel sees
+in its home and runtime directories out of only the granted paths, so the real directory contents are not
+there to be reached (`construction-by-absence`). The interposition limb is Landlock, a kernel-enforced ACL
+keyed to the process that grants read, write, and execute on the bound paths and denies the rest
+(`interpose-as-transaction`).
+
+Each closes a gap the other leaves open. A view without an ACL can be read around: a kennel could follow a
+symlink out of a bound directory into the real path behind it, and with no ACL in the kernel nothing would
+stop the dereference. An ACL without a view leaks by enumeration: a `readdir` on the home directory would
+return every entry, including the ones the kennel cannot open, which both tells the workload what exists and
+confuses the user about what was granted. With both, a `readdir` returns only the granted entries because the
+others are absent from the view, and a symlink that reaches for a real path is resolved by Landlock to that
+path and denied there. The symlink class is the kernel's to handle: Landlock resolves a link to its target
+and applies the ruleset to the resolved path, so a link out of a granted directory gains nothing. The
+symmetric bind-mount escape, remounting a forbidden path into an allowed one, is closed by the kennel holding
+no `CAP_SYS_ADMIN` to mount with, by `MS_NODEV`, `MS_NOSUID`, and `MS_NOEXEC` on the view's mount points, and
+by the namespace being `MS_SLAVE` so a mount inside it cannot propagate back to the host.
+
+## 6.2 The constructed home
+
+The home directory is the heart of the construction, and the move is to build a new one. The view begins as a
+fresh tmpfs that becomes the kennel's root, and into it the spawn binds the policy's granted paths from the
+real home, read-only unless the grant is writable. The grant names the paths and which of them may be
+written:
+
+```
+[fs]
+read  = ["~/projects/acme/**", "~/.config/acme/config.toml"]
+write = ["~/projects/acme/build/**"]
+```
+
+Each read path binds into the fresh root read-only and each write path binds writable, and the home those
+binds land in otherwise holds nothing:
+
+```
+~/                              fresh tmpfs, writable
+  projects/acme/                bound read-only
+  projects/acme/build/          bound writable, persists to the host
+  .config/acme/config.toml      bound read-only
+```
+
+The system surfaces around them are built rather than shared: `/etc`'s identity
+files are written scrubbed of host specifics, naming an in-kennel user, so a lookup of the running identity
+returns the masked name and the constructed home rather than the operator's real login.
+
+A policy names home as `~`, and only as `~`. The same `~/projects/acme` is the operator's real
+`/home/johndoe/projects/acme` on the host, where the bind source lives, and the kennel's own
+`/home/kennel/projects/acme` inside the view, where it lands, under the home of the masked `kennel` user. The
+two absolute paths differ, and `~` is the one token that resolves to the right home on each side of the bind. A
+literal host path in a grant would pin one operator's login into a document meant to be portable, and would
+name the host's home where the view's was meant, so a grant never writes one. Home is `~`, on both sides of
+the boundary, always.
+
+The spawn then
+`pivot_root`s into the new root, and the Landlock ruleset is applied afterward so its rules key on the view's
+own inodes.
+
+The result is the protection the project was built for. Inside the kennel, a listing of the home shows only
+the granted entries; a path to the user's SSH directory returns no such file, because the directory was never
+built into the view; and a constructed path that tries to reach the real one is denied by Landlock as well,
+so the absence is backed by a denial. The kennel cannot enumerate, cannot discover, and cannot stumble into
+the credentials and state in the user's real home, because they are not in the world it was given
+(`construction-by-absence`). The protection is absence rather than redaction: the credential paths are not
+scrubbed in place, they are simply not bound, which is what closes the casual-reconnaissance case (T1.1)
+without any in-view filtering at all.
+
+## 6.3 Writable, but ephemeral
+
+The constructed home carries a Landlock write grant, because an application that cannot write to its own home
+breaks in surprising ways, and least astonishment is worth a grant here. What makes that safe is which
+surface is writable: it is the fresh tmpfs, not the host. Anything the workload creates directly in its home
+lands on that ephemeral tmpfs and is gone at teardown; only the paths bound writable from the real home
+survive, and a path bound read-only stays read-only at the VFS layer regardless of the home's own write
+grant. So the writable home is real enough for tools that expect it and empty of consequence by default: a
+workload that scatters files across its home persists nothing it was not explicitly granted a writable bind
+for, and the persistence it does get is exactly the set of paths the policy named.
+
+## 6.4 Denials and the pseudo-filesystems
+
+Beneath the grants sits a floor of categorical denials, evaluated before any allow, that templates carry by
+default and operators rarely touch. The pseudo-filesystems are constructed rather than inherited. The kennel
+gets a private tmpfs at `/tmp`, so it neither sees nor litters the host's; its `/proc` is the fresh one of its
+own PID namespace, showing only its own processes, with the host's hidden rather than filtered; and `/dev` is
+assembled from an allowlist, with the dangerous nodes denied by default, the memory devices, the GPU, audio,
+video, and input devices among them, present only where a policy passes one through deliberately. The kennel
+is given the device and pseudo-filesystem surface it needs to run and nothing of the host's that it does not,
+which is the same absence the home is built on, applied to the rest of the tree.
+
+## 6.5 The trust manifest
+
+One filesystem threat is not about what the kennel reads but about what it writes, and it reaches past the
+kennel's own life. A workload with a writable bind into a project can plant a deferred trigger, a build recipe,
+a repository hook, an editor task, that does nothing inside the kennel and fires later in the operator's own
+unconfined shell (T2.8). The defence is a host-readable marker the confined workload cannot forge. A
+`.trust-manifest.json` at the root of each writable workspace pins the hash of every known trigger:
+
+```
+{
+  "version": "2.0",
+  "generator": "kennel compile",
+  "execution": {
+    "triggers": {
+      "Makefile":              { "kind": "content", "sha256": "sha256:9f2b1c..." },
+      ".git/hooks/pre-commit": { "kind": "content", "sha256": "sha256:4c81a0..." }
+    }
+  }
+}
+```
+
+Each trigger path maps to the pinned hash of its bytes, which addresses a copy held in a store beside the
+manifest; the record carries more than the hash, the file mode so a revert cannot silently drop a setuid bit
+and the provenance of the pin, but the hash is what a divergence is caught against. The manifest is written by
+the CLI before the daemon is contacted, and refreshed only by the deliberate `kennel review`, never as a side
+effect of a run that would otherwise launder the workload's own edits. The parser for it runs in the CLI; the
+daemon never links it.
+
+Keeping the workload from forging the pins is a construction problem, and it is solved with the same over-mount
+the view is built from. Inside every writable bind, after the binds and before the pivot, the spawn over-mounts
+an empty read-only file at the manifest's path. Inside the kennel the manifest is present but empty: the
+workload can neither read the pins to learn what is watched nor write them to cover a change. The host inode
+underneath is untouched, so the operator's tools read the real manifest. This is deliberately not a Landlock
+denial, because Landlock cannot make a file in a granted directory read as empty while its parent stays
+readable; the view over-mount is the only mechanism that delivers the no-read property, and it is applied here
+to one well-known path. The pinned bytes themselves are kept beside the manifest in a content-addressed,
+operator-owned store, masked the same way, which is what lets review show a diff and restore a baseline rather
+than only detect a change.
+
+The manifest is enforced from two sides. While the kennel runs, the daemon watches the pinned triggers with an
+unprivileged `inotify` in the operator's context and acts on a mutation through the cgroup it already holds,
+warning, freezing the workload, or killing it, the one place the filesystem defence reacts on the workload
+live rather than only informing the host. After the run, cooperating host tooling refuses to execute a trigger
+whose hash has diverged from its pin, and `kennel review` shows the operator a unified diff and re-pins on
+approval, the human sign-off the masked workload cannot perform; a revert restores each changed trigger from
+its stored bytes and removes a planted one. The masking and the pins are structurally complete, the workload
+provably cannot read or forge them, and the honest residual is the catalogue: the defence is only as wide as
+the set of trigger kinds it knows to watch. For the writable bind that needs no concurrent host access, marking
+it exclusive shadows the source host-side for the run, so the operator and the workload cannot share the path
+while the kennel lives, closing the live channel the enumerated catalogue cannot.

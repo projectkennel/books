@@ -1,0 +1,140 @@
+# 7. Execution
+
+Chapter 6 settled what a kennel may read and write. Running a program is a separate grant. A binary the
+kennel can read is a file like any other until it is launched, and whether it may be launched is gated by a
+second Landlock access laid over the first, on an allowlist of its own, and what follows is that allowlist and
+the honest account of what it controls and what it does not.
+
+## 7.1 What it gates
+
+Execution control governs which programs a kennel may launch, by gating `execve` and its variants on a
+deny-by-default path allowlist. An empty allowlist runs nothing, so a bare base template can start no program
+at all and a derived template adds exactly the binaries it needs. The grant is on the act of launching a new
+program, not on the file's existence: the binary is present and readable through its filesystem grant, and
+the execution layer decides only whether the kernel will turn it into a running process.
+
+The boundary is narrower than it first sounds, and the design states the narrow version rather than the
+flattering one. What is controlled is `execve`, the spawning of a new program. It is not a control over the
+code a running program then loads. A program the kennel is allowed to run can map and execute any file it can
+read, because the kernel checks the execute access at `execve` and not at the `mmap` a dynamic loader uses to
+pull in code. The honest claim is that a kennel cannot spawn a program that is not on its allowlist, not that
+it cannot run code that is not on its allowlist. For most workloads the two are close; for an interpreter they
+are the same statement read twice, since an interpreter evaluates code by design. The execution layer answers
+which binaries may launch, and the filesystem, network, and local-service layers answer what a launched binary
+may then do.
+
+## 7.2 The allowlist and no_new_privs
+
+An execution policy is a shell and an allowlist of paths:
+
+```
+[exec]
+shell = "/bin/sh"
+allow = ["/bin/sh", "/bin/dash", "/usr/bin/dbus-send"]
+```
+
+The `allow` list is the execute allowlist, and `shell` names the login shell the synthetic passwd gives the
+masked user. The allowlist is enforced by Landlock, with `LANDLOCK_ACCESS_FS_EXECUTE` on the granted paths and a denial on
+everything else, which is why the kernel floor for an execution policy is 6.10, where that access has its full
+semantics; on an older kernel the policy is refused rather than applied at reduced fidelity (`refuse-to-start`).
+The enforcement is independent of `$PATH`: a kennel that invokes a tool by bare name fails the `execve` if the
+resolved binary is not granted, no matter where it sits on the search path, and the kennel's `$PATH` is set
+only so the failure reads as a missing tool rather than a mysterious lookup. The binaries a confinement most
+wants to keep out, the privilege-changing ones, are kept out by simply never appearing on any allowlist: the
+escalation tools are not denied by name, they are absent from the grant, so they do not run (`mediate-use-not-reach`).
+
+Beneath the allowlist sits a second mechanism that does not depend on it. `PR_SET_NO_NEW_PRIVS` is set
+unconditionally in every kennel, before the workload runs, and no policy can turn it off. With it set, a setuid
+or setgid binary does not gain its owner's identity on `execve`, and file capabilities do not apply, so even an
+escalation binary that somehow were on the allowlist could not lift the workload above the operator it runs as
+(T3.1). This is the execution-time face of keeping identity without authority: the workload cannot climb back
+to privilege through a binary it finds, because the kernel refuses the climb (`split-the-uid`). The flag is
+cheap, it is non-negotiable, and a framework that let a policy clear it would be misnamed.
+
+## 7.3 What FS_EXECUTE checks
+
+The execute access is checked at `execve`, on each file the kernel opens for execution, and for a
+dynamically-linked program that is two files, not one: the binary itself, and the ELF interpreter named in its
+`PT_INTERP`, the dynamic loader the kernel opens to run it. An allowlisted dynamic binary therefore needs the
+execute grant on its loader as well as on itself, or it does not start. It does not need, and does not get, an
+execute grant on the shared libraries the loader then pulls in. Those arrive through a memory mapping, and
+Landlock has no hook on `mmap` or `mprotect`, so a file mapped executable is never checked against the execute
+access at all. A library loads on read access alone, and no execute grant on it would change that.
+
+The design follows that fact rather than fighting it. At compile time the toolchain reads each allowlisted
+binary's ELF with a parser rather than by running it, takes the loader path from `PT_INTERP`, and settles the
+distinct loaders into the signed policy as their own fixed, auditable set:
+
+```
+[exec]
+allow   = ["/usr/bin/python3"]
+loaders = ["/lib64/ld-linux-x86-64.so.2"]
+```
+
+The operator wrote the `allow` line; the `loaders` set is the compiler's, `python3`'s `PT_INTERP` resolved and
+recorded so the execute check at `execve` finds the loader granted as well. A statically-linked binary names no
+interpreter and contributes none. The libraries are simply readable, covered by the ordinary filesystem grants
+that already reach the system library directories, and there is deliberately no execute-allowlist over them. A
+list of permitted libraries would be a policy the kernel cannot enforce, since the access it would name is
+never checked, and a control that cannot be enforced is worse than no control, because it reads as a promise
+the system does not keep.
+
+## 7.4 Writable, and interpreted
+
+Two limits on the allowlist are worth stating because a reader will otherwise assume them away. The first is
+that a writable path must not also be executable. Without that rule, a kennel granted write into a project and
+the right to run an interpreter could write a fresh binary and run it, or write a script and feed it to the
+interpreter, and the allowlist would have bought nothing. The `deny_writable` invariant closes it the way a
+`noexec` mount would, making the intersection of writable and executable paths empty by enforcement, so a
+binary placed in a writable directory cannot be launched from it.
+
+The second is the interpreter caveat, and it is the honest boundary again at one remove. Granting an
+interpreter the right to run grants it the right to run anything it can read: a kennel whose only executable is
+a scripting language can execute any program written in that language, from a file, from standard input, from
+the network. The execution grant gates which interpreters start, not what they do once started, and a reader
+who expects an allowlisted interpreter to mean a single permitted script has misread the control. The
+containment for what an interpreter does lives in the other resource classes, not here. Where the workload's
+own first binary must be exactly the expected one, a content pin closes the remaining gap: the policy may carry
+a set of accepted digests for the initial binary, and the daemon verifies the resolved binary's hash against
+them before the handoff into the kennel, refusing the run on a mismatch. That check is on the bytes, made by
+the daemon and never by the init inside the kennel, and it is the one place the execution control reaches past
+the path to the content behind it.
+
+## 7.5 Composing the allowlist
+
+The allowlist in §7.2 was hand-listed, and for a one-off policy that is the honest form. In practice the same
+few binaries recur, an interpreter and its package tools, a version-control client, a build toolchain, and
+hand-listing them in every policy invites the drift a confinement exists to prevent. The recurring grants live
+in a fragment instead, a signed, version-pinned bundle a policy includes rather than copies:
+
+```
+# fragments/lang-python/policy.toml
+name = "lang-python"
+
+[[exec.allow.add]]
+path = "/usr/bin/python3"
+reason = "Python interpreter"
+
+[[exec.allow.add]]
+path = "/usr/bin/pip3"
+reason = "Python package installer"
+```
+
+A fragment is additive: every entry is a `[[*.add]]` delta appended to the effective policy, so a fragment can
+only widen a grant and never remove or override one, which keeps composition order-independent. The
+`lang-python` fragment carries more than its exec grants, the writable `~/.cache/pip` the installer needs and
+the `pypi.org` proxy entry the index needs, so one include grants a Python workflow everything it touches
+across exec, filesystem, and network at once. A leaf pulls it in by versioned reference:
+
+```
+name = "my-agent"
+template_base = "ai-coding-strict@v1"
+include = ["lang-python@v1", "vcs-git@v1"]
+```
+
+Each include is resolved and signature-verified the way the parent template is, and byte-pinned in the
+lockfile, so the resolved set reproduces or the build fails. The loaders of §7.3 do not care where a binary's
+grant came from: the compiler resolves `python3`'s `PT_INTERP` into the settled policy whether the operator
+hand-listed it or included `lang-python`. Two includes that add conflicting rules for the same destination
+fail to compile with an explicit conflict rather than a silent last-wins, and the resolution machinery that
+enforces all of this is the compiler's.

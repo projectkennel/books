@@ -1,0 +1,90 @@
+# 4. The trusted base
+
+Chapter 3 ended on a single crate's division of labour: the unsafe binder ABI beneath the policy brain that
+holds none of it. That division scales to the whole codebase, and what it scales to is the trusted base, the
+set of crates whose correctness the confinement rests on. How large that base is, how it is held small, and
+where the honest count of it parts from the flattering one are what follow.
+
+## 4.1 What counts as trusted
+
+The trusted computing base is the code linked into the binaries that enforce: `kenneld` the daemon,
+`kennel-privhelper` the capability helper, and `kennel-bin-init` the root-owned PID 1. A bug in any of them
+can break confinement, so their first-party dependency closure is the base whose correctness is load-bearing.
+At the time of writing, between releases 0.4.0 and 0.5.0, the whole workspace is 27 crates and about 35,000
+lines; the TCB closure is 16 of them, about 21,000. The other 11, some 13,600 lines, are outside it: the
+operator CLI and the crates only it pulls, the in-kennel facades the workload reaches, and the D-Bus
+mediation engine.
+
+What keeps those 11 out is a crate boundary, not a habit of not calling them. The operator CLI, the
+CLI-to-daemon control protocol, and the policy compiler are each their own crate, so the daemon links only
+what it needs to verify a settled policy and act on it. The compiler is the clearest case: it is the larger
+half of the policy code, about 5,000 lines of source schema, template resolution, deltas, signing, lint, and
+risk evaluation, and the daemon links none of it. Authoring depends on the runtime half and never the
+reverse, and only the CLI links the compiler, so a `cargo tree` over the daemon shows no compiler, no
+argument parser, no JSON. The minimisation is structural and checkable, not a property the daemon happens to
+have today (`rule-of-1`).
+
+## 4.2 The vendored truth
+
+The lines counted so far are first-party, and that is the flattering count. The base a compromise
+runs through is dominated by the vendored crates the trusted crates pull in: at the same snapshot, roughly
+200,000 lines of vendored code against the 21,000 first-party in the closure, an order of magnitude more. An inventory that
+stopped at first-party would understate the audit surface by that order of magnitude, so the honest one
+counts the vendored code too, and sorts it on two axes: whether it is logic or bindings, and whether the
+input it sees is adversarial or trusted (`own-your-supply-chain`, `read-by-the-hostile`).
+
+Most of the vendored bulk is bindings, not logic. `libc` alone is over 100,000 lines, and it is almost
+entirely `extern` declarations and constants; `nix` is another 30-odd thousand of typed wrappers over the
+same surface. These are platform declarations resolving to the system's own `libc.so` and the kernel,
+cfg-gated, with close to no per-line algorithmic risk, because nothing in them runs an algorithm over an
+input. The logic that does run in-process is far smaller, on the order of 60,000 vendored lines, and it is a
+short list: an ELF reader, the serialisation of the project's own typed structures, a signature verifier, the
+compiler for the project's own seccomp filter, and the parser for the signed policy artefact.
+
+## 4.3 The empty intersection
+
+Sorting on two axes is worth the trouble because of the one cell it leaves empty. Logic against bindings says
+what executes in the process; adversarial against trusted says what an attacker can steer. The cell that
+would hurt, vendored logic running on adversarial input inside the daemon, has nothing in it. The vendored
+logic that runs in the daemon all reads trusted input: the project's own ELF, its own typed wire, its own
+filter program, the signed and verified policy artefact. The one piece that touches attacker-supplyable bytes
+is the signature verifier, and verifying those bytes is the whole point of it, a guard rather than a victim.
+The ANSI terminal parser that does read workload-controlled output, the obvious place adversarial vendored
+logic would creep in, runs in the operator CLI and not at the daemon's read point, where the broker is a
+raw-byte router that parses nothing.
+
+The one first-party parser of adversarial bytes left in the daemon is the binder command decoder, exactly
+the one chapter 3 quarantined and fuzzed (T5.1). Everything else adversarial is pushed to the untrusted side
+by construction. The D-Bus engine makes the discipline visible: it parses the hostile D-Bus wire,
+some 4,000 lines of it, but it is vendored onto the in-kennel facade and the operator-context delegate, never
+onto the daemon, so a `cargo tree` over the daemon stays free of it. Mediating D-Bus grew the facade's attack
+surface, on the untrusted side of the boundary, and left the trusted base unchanged. The host-side delegates
+are the same move for I/O rather than parsing: the outbound dialer and the inbound accepter are dumb
+processes, each close to a netcat over an owner-only socket, while the daemon holds all the policy and none of
+the blocking work (`control-not-data-plane`).
+
+## 4.4 The unsafe, quarantined
+
+Five crates carry `unsafe`, and they are the same five throughout the system: the raw-syscall, namespace, and
+seccomp surface; the hand-rolled Landlock ABI; the BPF loader; the binder ioctl ABI; and the `SCM_RIGHTS`
+descriptor adoption. Together they are under 4,000 lines, and all of them are leaves or near-leaves in the
+dependency graph, depended on rather than depending. The safe operating-system primitives, path
+canonicalisation, uid and gid handling, the netlink and userns-map handshakes, were deliberately split out
+into their own safe crate so the unsafe crates stay small enough to read in one sitting, which is the size a
+reviewer can hold in their head and a fuzzer can cover (`quarantine-the-unsafe`, `rule-of-1`). The trusted
+base is large in total, most of it vendored bindings that run no algorithm, and the part of it that is both
+first-party and unsafe is under 4,000 lines a reviewer can read end to end.
+
+## 4.5 The shape of the workspace
+
+The naming makes the inventory legible. A `kennel-lib-` crate is a library; a `host-` binary is a host-side
+delegate running in the operator's context, outside every kennel; a `facade-` binary is the in-kennel end of
+a connector, confined workload-side code; the rest are the daemon, the helper, and the inits. The dependency
+graph has a direction: `kenneld` sits at the top, pulling nearly every library to do its work, the unsafe
+mechanism crates sit near the bottom as leaves providing one primitive each, the libraries depend downward,
+and the authoring half depends on the runtime half and never the reverse, so there are no cycles and the
+trusted closure is exactly the downward cone under the three enforcing binaries. Of those three only one
+holds host privilege, `kennel-privhelper`; `kenneld` runs unprivileged as the operator and `kennel-bin-init`
+holds no host capability, as chapter 2 set out. The trusted base is defined by what would break confinement,
+not by what holds privilege, and most of it holds none. The whole workspace is blocking and
+thread-per-connection with no async runtime, which keeps the call graph something a reader can follow by hand.

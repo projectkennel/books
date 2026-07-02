@@ -1,0 +1,150 @@
+\hypertarget{the-audit-account}{%
+\chapter{19. The audit account}\label{the-audit-account}}
+
+A reference monitor is asked for three things. It must mediate every
+access, it must resist tampering, and it must be small enough to verify
+and honest enough to account for what it did. The volume so far has been
+the first two made mechanism: every crossing driven through one gateway,
+the enforcer always outside the thing it confines, privilege held in the
+narrowest place and never in the daemon a workload can reach. What
+remains is the third, and it is two accounts rather than one. Before a
+kennel runs, a report says what its policy exposes. While it runs, a log
+records what it did. Together they are how the monitor answers for what
+it mediates.
+
+\hypertarget{the-risk-report}{%
+\section{19.1 The risk report}\label{the-risk-report}}
+
+\texttt{kennel\ policy\ risks} evaluates a fully folded policy against
+the threat catalogue and reports what the grants expose and what they
+mitigate. Each finding names a threat by its catalogue identity, carries
+the catalogue's one-line residual for it, names the granting site that
+carries it, and quotes the reason the operator wrote there. So an
+exposure is never a bare label: it is a threat, the exact grant that
+opens it, the residual that remains after the framework's mitigation,
+and the operator's own stated cause for accepting it, read off the
+policy as a single legible line.
+
+\begin{kennelcode}
+$ kennel policy risks
+exposes
+  T1.6  host-network reconnaissance, the residual after host mode
+        at   [net] mode = "host"
+        why  "the build needs the corporate proxy on a host-only VLAN"
+mitigates
+  T3.8  arbitrary egress, closed by the proxy default-deny
+\end{kennelcode}
+
+An exposure reads as the threat, the residual the catalogue records for
+it, the exact grant that opens it, and the reason the author wrote at
+that grant, so the report answers not only what a policy risks but why
+its author accepted the risk.
+
+A tag reaches the report two ways, and the report keeps them apart. Most
+are authored, written on a grant by whoever wrote the template or the
+leaf. Some are derived: the compiler infers them from the shape of a
+grant, so a policy that opens host network mode has the
+host-reconnaissance residual reinstated against it whether or not the
+author tagged it (T1.6), a device passthrough carries the
+control-deactivation exposure (T2.1), a headless signing allowance
+reinstates the lateral-reach residual (T1.6). The derived set is what
+makes the report match what is enforced rather than only what someone
+remembered to write, and marking each finding authored or derived is
+what keeps an inference the compiler drew from being mistaken for a
+claim the author made.
+
+The honesty of the report is structural rather than asserted. The threat
+tags live only in the source policy and never survive into the settled
+artefact, so the report reads the same folded source the compiler
+enforced from, which is the honest input and not a separately maintained
+story about it. A tag that names no catalogued threat is surfaced as a
+likely typo rather than silently dropped or counted as a real risk, and
+a policy authored against an older catalogue version earns a drift note.
+There is no invented risk and no theatre: the report says what the
+grants carry, what the compiler can infer, and what it could not
+resolve, and nothing beyond that. This is the warning surface the rest
+of the volume kept pointing at (\texttt{footgun-warn-dont-forbid}). Host
+network mode's reinstated residual, the delegated-spawning exposure, the
+substrate trust of a pulled image, the standing-service consume: each
+was called a loud grant surfaced in the risk report, and this is the
+report, the place a deliberate exposure is shown to the operator as the
+reasoned choice it was rather than forbidden outright or buried.
+
+\hypertarget{the-audit-log}{%
+\section{19.2 The audit log}\label{the-audit-log}}
+
+While a kennel runs, the monitor records what it mediated in a
+structured per-kennel log. The record is tunable by resource class, the
+network, the filesystem, execution, the local-socket surface, and the
+bus each carrying their own setting, and by level within a class, from
+off through denies-only and a per-class summary to the full record of
+every mediated access. An operator logs every filesystem access and only
+denials on the network, or the reverse, or everything, by the
+deployment's need rather than a single global switch. The log is written
+to one of a few sinks, per-class files of newline-delimited JSON by
+default, or the system journal, or syslog, or the daemon's own output
+for a container that collects it from there.
+
+\begin{kennelcode}
+{"schema_version":1,"ts":"2026-06-29T12:37:33.829451Z","kennel":"build-agent",
+ "kennel_uuid":"7f3c...","event":"net.connect","resource":"net","outcome":"deny",
+ "source":"kenneld","host":"remco-vm","pid":58471,"dest":"exfil.example:443"}
+\end{kennelcode}
+
+Every record carries the same envelope, the schema version, a timestamp,
+the kennel name and its run identity, the event and resource class, the
+outcome, and the daemon as source, with the resource-specific fields
+beside it. A denial names what was refused and a mediation what was
+allowed, so the log is the account of what the monitor did, not what the
+policy said it might.
+
+One definition governs all of this, shared between the compiler that
+reads a policy's audit section and the daemon that reads a standalone
+defaults file, and it lives in the runtime crate rather than the
+compiler. That placement is the same discipline that kept the resolver
+out of the daemon, applied once more: the daemon must resolve audit
+configuration at spawn time, so the schema it needs sits where it can
+reach it without linking the compiler the daemon is built to exclude.
+The format carries a schema version and is stable across releases, so a
+tool written to parse the log can rely on its structure holding.
+
+\hypertarget{what-the-account-is-for-and-where-it-stops}{%
+\section{19.3 What the account is for, and where it
+stops}\label{what-the-account-is-for-and-where-it-stops}}
+
+The two accounts carry the uses that justify keeping them. A log of
+every resource access answers a forensic question after the fact, what a
+workload read between one time and another. It is evidence for a
+compliance claim, because a kennel that did not reach a protected
+resource did not reach it by the kernel's refusal and the log holds the
+refusals. It feeds policy refinement, a denied access the workload
+legitimately needed becoming the next grant the operator adds with a
+reason. And it is the input to anomaly detection, a monitoring layer
+watching for new destinations or unusual access or repeated denials.
+Every one of those is someone else's to build on top: the framework
+provides the record, never the watcher over it.
+
+That boundary is the honest shape of the whole account. The log is
+write-once and append-only from the framework's side, and stronger
+tamper-evidence, signed segments or an external transparency log, is a
+downstream concern the format leaves room for without claiming to
+provide. The compliance story is bounded the same way: the framework
+claims no regulatory certification and provides the infrastructure that
+makes a certification-relevant claim demonstrable, the evidence rather
+than the verdict. The risk report says what a policy exposes and the log
+says what a kennel did; whether either is acceptable is a judgement with
+standing the framework does not assume for itself. It accounts; it does
+not absolve.
+
+This is where the volume ends, because it is where the reference
+monitor's third demand is met. The account does not strengthen the
+confinement, which holds whether or not a log is ever read and whether
+or not a risk report is ever run. It makes the confinement answerable.
+What a policy exposed can be said before it runs, what a kennel did can
+be read after, and both can be checked against the design the first
+volume set out, in a form a person or a tool can verify rather than take
+on faith. A monitor that mediates completely and resists tampering but
+cannot be inspected still asks to be trusted. One that also accounts for
+what it mediated, in the open and in its own grant's words, asks for
+less, and that is the whole of what this design has tried to do: hold
+the line, and show its working.

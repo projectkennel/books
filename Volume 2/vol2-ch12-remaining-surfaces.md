@@ -1,0 +1,109 @@
+# 12. The remaining surfaces
+
+The resource chapters covered the large outward-facing classes, the things a workload reaches for. What is left
+is smaller and inward: the surfaces that are properties of the box the workload runs in rather than capabilities
+it asks for, each one minor next to the filesystem or the network and each one load-bearing in the threat model.
+They are what the workload can observe of its neighbours, what it inherits at startup, how its own terminal can
+be turned against the operator, and what it might use to climb or to map the machine.
+
+A note on what is settled here. These surfaces are shipped and enforced as described, with one class of
+exception: a few convenience toggles over them are not built yet, and the parser rejects them today. A file to
+seed the environment from, a template to seed the home's dotfiles, and named shortcuts for GPU and
+hardware-token access are all roadmap. The controls they would name are reachable now through the general
+primitives, a forced environment variable, a device passthrough, a socket grant, so nothing in the threat model
+waits on them, and the toggles are sugar over mechanisms that already hold. Where the text reaches one of them,
+it says so.
+
+## 12.1 What the workload can observe
+
+A workload that can look into other processes need not reach the network to do harm. One that can `ptrace` the
+operator's shell reads its memory directly, every password and decrypted key and session token in it; one that
+can read another process's `/proc/<pid>/environ` lifts whatever secret was passed to it that way; one that can
+signal arbitrary processes can kill the daemons that were watching it (T1.1). The controls against all three are
+structural rather than declared. The PID namespace is the strong one: a process the kennel cannot see in `/proc`
+it cannot name to `ptrace` or to `kill`, and `/proc` is mounted so that even visible entries reveal nothing of
+their owners. Signal delivery is fenced a second way on a recent kernel, by a Landlock scope that refuses
+signalling any process outside the sandbox even when a PID is guessed, the same scoping family that closed the
+abstract-socket namespace two chapters back.
+
+The policy carries `[unsafe.ptrace]` and `[unsafe.signal]` tables, and they are worth being clear about, because
+they are advisory. They state which targets a workload may reach, and that statement is real in that the diff
+shows it and the operator signs it, but the enforcement underneath is the PID namespace and seccomp, not the
+tables. Declaring one compiles with a warning (`footgun-warn-dont-forbid`): it records an intent, it does not
+impose a control the structure was not already imposing. The distinction matters wherever these surfaces appear,
+because several of them are held by construction and merely named by policy, and reading the policy as the
+enforcement would overstate what a table can do.
+
+## 12.2 What the workload inherits
+
+The environment a process starts with is a quiet credential surface, because the operator's shell is usually
+full of secrets, `AWS_SECRET_ACCESS_KEY`, `GITHUB_TOKEN`, an agent socket path, and a child inherits all of them
+by default. Kennel does not inherit and filter, it synthesises. The spawn builds the workload's environment from
+policy and execs with that, never consulting the parent's environment as a source of truth, so the default is
+empty and every variable present is one policy named, set in `[env].set`. This is the denylist lesson applied to the environment:
+curating the dangerous variables out of the parent's set leaks the one the list forgot, while building the set
+from nothing leaks only what was written down (`construction-by-absence`). A workload that truly needs a dynamic
+non-secret like `TERM` opts that single variable in, visibly, as a discouraged exception (T1.1).
+
+The run context around the environment follows the same rule. `$PATH` is set from the execute allowlist rather
+than inherited, because it means nothing except as an index into the binaries that allowlist already permits.
+The login shell is policy-selectable but must be a binary the allowlist permits, so naming a shell the kennel
+could not then run is a compile error and not a runtime surprise (`make-invalid-unrepresentable`). The
+shell-init files are synthesised from policy and rebuilt every spawn, in a home that is the kennel's own and
+never the operator's. That rebuild is a security property rather than a convenience: a persistent,
+workload-writable `~/.bashrc` runs on every future interactive shell in the kennel, which makes it a
+self-persistence vector, so the home is reconstructed by default and a policy that wants durable state names the
+exact paths that survive. Persisting a working directory is the ordinary low-risk case; persisting a shell-init
+file is a deliberate, named, diff-reviewed choice, and even then the blast radius is this kennel's own later
+runs, re-entered under the same confinement.
+
+## 12.3 The terminal
+
+A workload running in a terminal can turn that terminal against the operator two ways, and they need different
+answers. The first is input injection. The `TIOCSTI` ioctl asks the kernel to push characters into the
+controlling terminal as though typed, which a confined process would use to queue commands that run in the
+operator's shell after the kennel exits. Kennel closes it by removing the target rather than policing the call:
+the workload's controlling terminal is a node in the kennel's own isolated `devpts`, and the operator's
+`/dev/tty` is not in the view at all, so an injection reaches only the workload's own session, which is the
+workload's to disrupt (`construction-by-absence`). No syscall filter is needed, because there is nothing on the
+other side to inject into.
+
+The second is output. A workload writing to its terminal can emit escape sequences that act on the operator's
+emulator rather than printing, OSC 52 to read and write the system clipboard, OSC 9 and 777 to raise
+notifications, the device-control bands to carry emulator-specific commands, all of it an exfiltration and
+injection channel with nothing to do with `TIOCSTI`. The output is filtered on its way to the operator's real
+terminal, the dangerous set dropped and the benign passed, and where that filter runs is the careful part. The
+daemon's PTY broker pumps the workload's output as raw bytes and never parses it, so the parser that interprets
+a hostile escape stream, a streaming `vte` state machine, lives in the attached client and not in the trusted base (`quarantine-the-unsafe`); the
+daemon conveys the decision and the client enforces it. The workload cannot choose its client, so it cannot opt
+out, and a consumer that bypasses the filter only exposes its own terminal. The filter is best-effort and not a
+proof: it shuts the low-effort clipboard and notification channel (T2.6) rather than every conceivable desync,
+and running a kennel in a terminal you trust stays the backstop.
+
+The controlling terminal an interactive run needs is built to preserve that isolation. A real terminal is
+required for job control and full-screen tools, but forwarding the operator's own would hand the workload the
+very `/dev/tty` the input defence removes. So the pty is allocated from the kennel's own `devpts` after the
+pivot, the seal makes it the workload's controlling terminal and hands the master not to the CLI but to the
+daemon, which holds it in a per-kennel broker and pumps it raw to whatever client is attached. Because the
+master lives in the daemon, the operator can detach and reattach without ending the workload, the console model
+rather than an exec into the live sandbox: no second process is injected past the confinement, only a terminal
+taken over and handed back.
+
+## 12.4 Capabilities, mounts, and the floor
+
+The last surfaces are the ones a workload might use to climb or to map the machine, and the answers are uniform
+and dull by design. Linux capabilities are dropped to nothing: the bounding set is emptied so a setuid binary
+cannot raise the workload past its uid, `no_new_privs` is forced on as the execution chapter required, and the
+schema warns at the mere listing of a capability, because a confined uid-1000 workload that needs one is almost
+always a design error (`split-the-uid`). The mount table is narrowed by the same mount namespace the constructed
+view already uses: the workload sees only the mounts it was given, none of the operator's removable media or
+cloud sync or loop images, and a `mount` call fails for want of the capability just dropped.
+
+Beneath those sits the syscall floor. Most of what Kennel confines reads better as a resource ACL than as a
+syscall filter, so seccomp is not the main event, but it closes the gaps the ACLs cannot reach: the
+abstract-socket connect Landlock has no word for, and a denylist of calls with no legitimate use in a kennel and
+a long history in exploit chains, `userfaultfd`, `bpf`, `ptrace`, the `process_vm` pair, `mount` and
+`pivot_root` and the rest. The cgroup the kennel runs in is one it cannot leave, which matters because leaving it
+would shed the BPF filters attached to it, so membership is an invariant the operator does not set and the
+workload cannot change. None of these is a knob the policy author reaches for; they are the floor the surfaces
+above stand on.

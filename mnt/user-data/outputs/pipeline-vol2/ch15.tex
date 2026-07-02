@@ -1,0 +1,229 @@
+\hypertarget{the-interposed-surface}{%
+\chapter{15. The interposed surface}\label{the-interposed-surface}}
+
+The mesh of the previous chapter brokers a connector between two kennels
+and steps out. That works when the capability is a connection: a socket,
+a name, a node, something whose whole substance is the bytes that flow
+once it is wired. Some capabilities are not like that. A display
+protocol is a stateful conversation a client holds with a server that
+owns screens, input devices, and every other client on the machine, and
+mediating it the way the D-Bus facade mediates a bus, message by message
+against a filter, would put a parser of an adversarial display protocol
+in the trusted path, the one thing the project refuses everywhere else.
+The answer for a surface too rich to broker per message is to interpose
+a whole confined instance of the service between the workload and the
+real thing: a server constructed for the workload, holding the one
+downstream connection to the host, so the workload talks to something
+the kennel owns and never to the host at all. The pattern is
+\texttt{interpose-as-transaction} raised from a single descriptor to an
+entire service, and the confined GUI is its one worked instance today.
+
+\hypertarget{the-display-server-is-constructed-not-granted}{%
+\section{15.1 The display server is constructed, not
+granted}\label{the-display-server-is-constructed-not-granted}}
+
+The host compositor is a shared resource, and handing a kennel a
+connection to it grants whatever that compositor exposes to its clients.
+What a compositor exposes varies: screen-capture globals, virtual input,
+layer-shell, the set of other connected clients. Some compositors gate
+these from a tagged sandboxed client through a staging protocol; most,
+the mainstream desktop default among them, do not. A design resting on
+the host compositor to deny privileged globals would be enforced on one
+machine and unenforced on the next, with no way to tell the difference
+from inside the kennel. That is the X11 problem in a milder form,
+confinement the protocol's server must opt into, which the framework
+does not own, and X11 itself admits no mediation that confines a client
+and stays out of scope.
+
+So the display server is not borrowed from the host; it is constructed.
+The workload is given a display server that exists only for it, whose
+every global is one the framework placed there, and the host compositor
+is reduced to a single ordinary downstream client relationship held by a
+different kennel and never the workload's. This is the absence path
+applied to the display (\texttt{construction-by-absence}): rather than
+enumerate what a graphical workload must be denied on the host
+compositor and hope the denial holds across deployments, present it a
+positively constructed compositor containing only what one confined
+application should see.
+
+\begin{kennelcode}
+[[consumes]]
+name = "desktop.display"
+shape = "af-unix"
+at = "wayland-1"
+required = true
+reason = "the workload's only display is the one the GUI-service kennel constructs"
+\end{kennelcode}
+
+In the workload's own policy the constructed display is an ordinary
+consume, an \texttt{af-unix} capability named like any other. The
+workload names a display and reaches whatever the catalogue resolves it
+to, here a GUI-service kennel's nested compositor, and it holds no leg
+to the host compositor anywhere in its policy.
+
+\hypertarget{the-nested-compositor-and-the-brokered-leg}{%
+\section{15.2 The nested compositor and the brokered
+leg}\label{the-nested-compositor-and-the-brokered-leg}}
+
+The GUI-service kennel runs an upstream Wayland compositor inside the
+confinement, cage by default for its single-application kiosk shape,
+with Weston or sway where a kennel should present several windows, and
+it spawns one fresh instance per app connection. The confined app
+connects to that compositor, and its registry enumerates the inner
+compositor's globals and nothing else; the host's screen-copy,
+input-synthesis, and layer-shell globals and the host's other clients
+sit on a socket the app's view does not contain, absent rather than
+denied. There is no allow-list of host globals to maintain and no
+Wayland parser anywhere in the trusted path, because the inner
+compositor is unmodified upstream software and the isolation is a
+property of which compositor the app can reach, not of filtering the
+bytes it exchanges with one. None of the three compositors is patched;
+the GUI-service kennel is an ordinary confined kennel whose workload
+happens to be a compositor, its choice declared in the kennel's policy.
+
+A nested compositor must itself reach some compositor to put pixels on
+the screen, and the GUI-service kennel holds that one connection. The
+inner compositor reaches the host through the same AF\_UNIX brokered
+connect the host-socket facade performs, opening a Wayland socket
+presented at a path in its own view and letting the daemon broker the
+connect to the host compositor, relaying the connection's bytes and the
+\texttt{SCM\_RIGHTS} descriptors it carries, the keymap and shm pools
+and dmabuf buffers a byte-only relay would silently drop. The path the
+compositor opens names the facade, not the host: the host compositor's
+own socket pathname is absent from the inner compositor's view and from
+the app's beneath it, so the app cannot name the host socket, reach the
+host's other display clients, or open a second connection of its own
+(\texttt{make-invalid-unrepresentable}). The broker relays bytes and
+descriptors and parses none of the display wire
+(\texttt{control-not-data-plane}). Both legs are brokered AF\_UNIX, the
+same \texttt{org.projectkennel.wayland} mesh shape of the previous
+chapter, and the split is eager against lazy: the
+inner-compositor-to-host leg is eager, brokered the moment the
+compositor starts because the host compositor is always up, while the
+app-to-inner leg is the mesh consume, socket-activated, the app's first
+connect to the Wayland socket at its own endpoint spinning up the
+dedicated inner compositor that did not exist until it reached for one.
+
+\hypertarget{the-invariant-and-where-the-enforcer-runs}{%
+\section{15.3 The invariant, and where the enforcer
+runs}\label{the-invariant-and-where-the-enforcer-runs}}
+
+The load-bearing property is a standing invariant: confined GUI depends
+on no enforcement by the host compositor. The host sees one ordinary
+Wayland client, the GUI-service kennel's leg, and is asked to enforce
+nothing; every confinement property of the display is carried by a
+compositor the framework ships and controls, inside a kennel.
+Bring-your-own inner compositor is the right shape unconditionally, not
+a position to revisit when the mainstream desktop gains the staging
+protocol that lets a host compositor deny privileged globals to a tagged
+client. Where the inner compositor implements that protocol it is
+optional defense-in-depth, a second redundant denial, never the floor,
+because depending on the host compositor at all ties the guarantee to
+deployment-specific software outside the operator's policy. The enforcer
+must sit inside the boundary, and the nested compositor puts it there.
+
+Which is why the inner compositor runs in the GUI-service kennel and
+never the app's. A workload must not be able to reach or subvert the
+component that confines its display, and placing the enforcer inside the
+thing it confines is the tamperproofing failure a reference monitor
+exists to avoid, so the model is two kennels rather than a compositor
+injected into the app's own view. The inner compositor's own interface
+is permissive by design, cage and its alternatives exposing screen-copy
+and virtual-input globals because a compositor's clients legitimately
+screenshot and drive the surfaces it owns, and that permissiveness is
+bounded by the nesting rather than asserted away. The capture and input
+globals operate on the inner compositor's own scene graph, which holds
+only the kennel's surfaces, and have no path to the host's scene because
+the inner compositor is itself a mere client of the host compositor; it
+can capture what it composites and inject into the windows it owns, both
+the kennel's, and a client cannot reach across its own connection to
+drive the server's other clients. A capability confined to one trust
+domain and exercised within it is that domain's own software operating
+on its own surfaces, not a leak (T2.7).
+
+\hypertarget{isolation-the-host-leg-and-the-trust-class}{%
+\section{15.4 Isolation, the host leg, and the trust
+class}\label{isolation-the-host-leg-and-the-trust-class}}
+
+One inner compositor per app connection makes cross-kennel GUI
+invisibility structural. Two graphical kennels have two disjoint display
+servers with no shared global, surface, or input path, the same lateral
+isolation as their disjoint loopback subnets and socket views, and the
+isolation runs finer than the trust boundary requires: two apps even
+within one kennel do not share a display server unless they share a
+connection. That costs nothing, a nested compositor being cheap and
+living exactly as long as its connection, so the broker spawns one per
+connection and reaps it when the connection drops, the supervised set
+tracking the live connection population rather than a static
+declaration, closer to what the daemon does for a spawn than to a fixed
+sidecar. The clipboard and drag-and-drop follow the same construction:
+the kennel's clipboard is its inner compositor's, disjoint from the
+host's, so a workload neither reads the user's clipboard nor writes one
+the user will paste elsewhere, isolated because the compositor is the
+kennel's own rather than because a host compositor's clipboard policy
+was trusted to hold (T2.6). A consented, direction-aware bridge is a
+deliberate later grant, never the default.
+
+The reach the model does not eliminate it concentrates and bounds.
+Exactly one party reaches the host compositor, the GUI-service kennel,
+and it reaches it only to vend connected descriptors to the inner
+compositors it spawns, and even there it is one ordinary Wayland client
+contained by the host compositor's own client isolation the way any
+application is. No workload kennel holds the host leg and no unconfined
+host process holds standing display capability. This is the display
+analogue of the host-reconnaissance residual: a single deliberate
+reasoned host-reach held by a confined kennel, declared with a required
+reason and surfaced in the risk report as an exposure that reads as
+reasoned rather than as a boundary quietly bending (T1.12, the T1.6
+shape). An app kennel consumes \texttt{org.projectkennel.wayland} and
+the GUI-service kennel provides it, a reserved name only an
+operator-signed service kennel may claim, so a workload cannot advertise
+the display service's name and have a consumer's display brokered to an
+impostor; the consumer's grant is the coarse one,
+may-reach-the-GUI-service, never a per-global predicate that would drag
+a Wayland parser into the broker. The GUI-service kennel is the worked
+member of the service-kennel trust class whose multi-leg exemption the
+previous chapter defined: an operator-signed, deliberately enabled
+service may hold more legs than the single one an agent-composable spawn
+target is held to, because the operator vouched for the whole of it.
+
+\hypertarget{the-surfaces-ahead}{%
+\section{15.5 The surfaces ahead}\label{the-surfaces-ahead}}
+
+The pattern generalises past the display, and two further surfaces are
+where it goes next, each declared here as the shape it will take rather
+than as something the runtime carries today.
+
+The first is interactive file access. A graphical application that can
+touch only its pre-granted paths holds half a capability, because the
+defining desktop interaction is the user choosing a file at runtime that
+the application had no prior grant to. That choice is the fd-broker
+again under the user's live consent: the user picks a file and the
+application receives a descriptor to exactly that file, having held no
+filesystem and gained no path it can enumerate. The chooser is the
+host's own file dialog, a trusted process the user already relies on, so
+consent happens outside the confinement on the host the user trusts, and
+the picker is transient, summoned per request and gone when the choice
+is made, holding no standing capability. A confined GUI without it is a
+window that cannot open a document, so it is part of the display
+capability rather than an adjunct, and it is owed work rather than
+landed: the broker that drives a host picker and places the chosen
+descriptor into the workload's view is not yet in the tree.
+
+The second is the relocation of the desktop's D-Bus broker.
+Notifications, open-a-URL, and the other desktop-service calls ride the
+D-Bus facade of the local-services chapter, which mediates the bus per
+message, and that facade's host-side half today runs in the operator's
+own context. Moving it into a confined nested instance is the
+interposed-surface pattern applied to the bus: the broker becomes a
+service constructed for the workloads that consume it rather than a
+delegate in the operator's context, interposed as an instance the
+framework owns. That relocation reshapes where the local-services
+boundary sits, so the two chapters reconcile when it lands rather than
+now, and until it does the facade stands as the local-services chapter
+describes it. Each of these is the same move the display made, a
+capability owned as a constructed instance and a broker rather than a
+foreign substrate shaped to fit, which is the thesis the confined GUI
+arrived at by eliminating every option that borrowed enforcement from
+outside the boundary: own the trusted path, depend on nothing foreign in
+it, and prefer a constructed instance to a filtered one.

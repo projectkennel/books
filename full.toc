@@ -1,0 +1,102 @@
+\contentsline {chapter}{Project Kennel: Design Principles}{1}{chapter*.3}%
+\contentsline {section}{Premise}{1}{section*.4}%
+\contentsline {subsection}{good-boy}{1}{section*.5}%
+\contentsline {subsection}{split-the-uid}{2}{section*.6}%
+\contentsline {subsection}{do-less}{2}{section*.7}%
+\contentsline {section}{System}{2}{section*.8}%
+\contentsline {subsection}{reference-monitor}{3}{section*.9}%
+\contentsline {subsection}{mediate-use-not-reach}{3}{section*.10}%
+\contentsline {subsection}{construction-by-absence}{4}{section*.11}%
+\contentsline {subsection}{interpose-as-transaction}{4}{section*.12}%
+\contentsline {section}{Architecture}{4}{section*.13}%
+\contentsline {subsection}{rule-of-1}{5}{section*.14}%
+\contentsline {subsection}{control-not-data-plane}{5}{section*.15}%
+\contentsline {subsection}{authentication-never-attestation}{5}{section*.16}%
+\contentsline {section}{Boundaries}{6}{section*.17}%
+\contentsline {subsection}{request-dont-author}{6}{section*.18}%
+\contentsline {subsection}{footgun-warn-dont-forbid}{6}{section*.19}%
+\contentsline {subsection}{tell-me-why}{6}{section*.20}%
+\contentsline {subsection}{refuse-to-start}{7}{section*.21}%
+\contentsline {chapter}{\headfont Part I\hskip 1em\relax The model}{8}{section*.22}%
+\contentsline {chapter}{1. The premise}{9}{chapter*.23}%
+\contentsline {section}{1.1 The threat is effect, not intent}{9}{section*.24}%
+\contentsline {section}{1.2 Identity and authority}{10}{section*.25}%
+\contentsline {section}{1.3 The trust root, and the limits of the claim}{11}{section*.26}%
+\contentsline {section}{1.4 The shape of the answer}{12}{section*.27}%
+\contentsline {chapter}{2. The reference monitor}{13}{chapter*.28}%
+\contentsline {section}{2.1 Complete mediation}{14}{section*.29}%
+\contentsline {section}{2.2 Tamperproof}{15}{section*.30}%
+\contentsline {section}{2.3 Verifiable}{15}{section*.31}%
+\contentsline {section}{2.4 The same three properties, held against the alternatives}{16}{section*.32}%
+\contentsline {chapter}{3. The two limbs}{19}{chapter*.33}%
+\contentsline {section}{3.1 Absence}{19}{section*.34}%
+\contentsline {section}{3.2 Interposition}{20}{section*.35}%
+\contentsline {chapter}{\headfont Part II\hskip 1em\relax The resource classes}{22}{section*.36}%
+\contentsline {chapter}{4. Filesystem}{23}{chapter*.37}%
+\contentsline {section}{4.1 The empty world}{23}{section*.38}%
+\contentsline {section}{4.2 The contract}{24}{section*.39}%
+\contentsline {section}{4.3 Absence at finer grain}{24}{section*.40}%
+\contentsline {section}{4.4 The floor}{25}{section*.41}%
+\contentsline {section}{4.5 The trust record}{25}{section*.42}%
+\contentsline {chapter}{5. Execution}{27}{chapter*.43}%
+\contentsline {section}{5.1 The right to launch}{27}{section*.44}%
+\contentsline {section}{5.2 The contract}{27}{section*.45}%
+\contentsline {section}{5.3 The launch, not what runs after}{28}{section*.46}%
+\contentsline {section}{5.4 The non-escalation guarantee}{29}{section*.47}%
+\contentsline {chapter}{6. Network egress}{31}{chapter*.48}%
+\contentsline {section}{6.1 Absence, then interposition}{31}{section*.49}%
+\contentsline {section}{6.2 The contract}{32}{section*.50}%
+\contentsline {section}{6.3 What the boundary does not claim}{33}{section*.51}%
+\contentsline {chapter}{7. Local services}{34}{chapter*.52}%
+\contentsline {section}{7.1 The paths, then the connection}{34}{section*.53}%
+\contentsline {section}{7.2 The contract}{35}{section*.54}%
+\contentsline {section}{7.3 The raw channel}{36}{section*.55}%
+\contentsline {section}{7.4 The facade}{36}{section*.56}%
+\contentsline {section}{7.5 The private instance}{37}{section*.57}%
+\contentsline {section}{7.6 What is not brokered}{38}{section*.58}%
+\contentsline {chapter}{8. Cryptographic services}{40}{chapter*.59}%
+\contentsline {section}{8.1 Authentication}{40}{section*.60}%
+\contentsline {section}{8.2 Attestation}{41}{section*.61}%
+\contentsline {section}{8.3 The man-in-the-middle we can't be}{43}{section*.62}%
+\contentsline {chapter}{9. OCI images}{44}{chapter*.63}%
+\contentsline {section}{9.1 Not the engine}{44}{section*.64}%
+\contentsline {section}{9.2 An image is a filesystem}{44}{section*.65}%
+\contentsline {section}{9.3 Ingesting without trusting}{45}{section*.66}%
+\contentsline {section}{9.4 What the operator takes on}{46}{section*.67}%
+\contentsline {chapter}{10. Delegation}{48}{chapter*.68}%
+\contentsline {section}{10.1 The trifecta}{48}{section*.69}%
+\contentsline {section}{10.2 Request, don't author}{49}{section*.70}%
+\contentsline {section}{10.3 Siblings, not children}{49}{section*.71}%
+\contentsline {section}{10.4 The residual}{50}{section*.72}%
+\contentsline {chapter}{11. The capability mesh}{52}{chapter*.73}%
+\contentsline {section}{11.1 Name, not peer}{52}{section*.74}%
+\contentsline {section}{11.2 Resolution is runtime}{53}{section*.75}%
+\contentsline {section}{11.3 Typed shapes}{54}{section*.76}%
+\contentsline {section}{11.4 The standing provider}{54}{section*.77}%
+\contentsline {chapter}{\headfont Part III\hskip 1em\relax The declared grant}{57}{section*.78}%
+\contentsline {chapter}{12. Defining confinement}{58}{chapter*.79}%
+\contentsline {section}{12.1 Intent, not machinery}{58}{section*.80}%
+\contentsline {section}{12.2 Deltas carry their reason}{59}{section*.81}%
+\contentsline {section}{12.3 Inheritance and the floor}{59}{section*.82}%
+\contentsline {chapter}{13. The settled policy}{62}{chapter*.83}%
+\contentsline {section}{13.1 What compilation produces}{62}{section*.84}%
+\contentsline {section}{13.2 The signature and the floor}{63}{section*.85}%
+\contentsline {section}{13.3 Fail-closed}{64}{section*.86}%
+\contentsline {section}{13.4 Authored in one place, enforced in another}{64}{section*.87}%
+\contentsline {chapter}{14. Trust and consent}{66}{chapter*.88}%
+\contentsline {section}{14.1 The trust root}{66}{section*.89}%
+\contentsline {section}{14.2 What crosses}{67}{section*.90}%
+\contentsline {section}{14.3 What the tiers are for}{67}{section*.91}%
+\contentsline {section}{14.4 Small enough to trust}{68}{section*.92}%
+\contentsline {chapter}{15. Keys}{70}{chapter*.93}%
+\contentsline {section}{15.1 Trust is placed, not minted}{70}{section*.94}%
+\contentsline {section}{15.2 The hierarchy of locations}{71}{section*.95}%
+\contentsline {section}{15.3 Admission, not termination}{72}{section*.96}%
+\contentsline {section}{15.4 Keys over time}{72}{section*.97}%
+\contentsline {chapter}{16. Audits}{74}{chapter*.98}%
+\contentsline {section}{16.1 The record of mediation}{74}{section*.99}%
+\contentsline {section}{16.2 Written by the trusted side}{74}{section*.100}%
+\contentsline {section}{16.3 Decisions, not contents}{75}{section*.101}%
+\contentsline {section}{16.4 A record made to be used}{75}{section*.102}%
+\contentsline {section}{16.5 What the record does not claim}{76}{section*.103}%
+\contentsline {chapter}{References}{77}{chapter*.104}%

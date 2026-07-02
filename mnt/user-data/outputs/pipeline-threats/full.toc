@@ -1,0 +1,62 @@
+\contentsline {section}{Threat Catalogue for User-Level Workload Confinement}{i}{section*.1}%
+\contentsline {chapter}{\headfont Part 1\hskip 1em\relax The threats in scope}{1}{section*.3}%
+\contentsline {chapter}{Purpose}{2}{chapter*.4}%
+\contentsline {chapter}{Conventions}{3}{chapter*.5}%
+\contentsline {chapter}{Threat families}{4}{chapter*.6}%
+\contentsline {chapter}{Family 1 --- Reconnaissance and exfiltration (T1.1--T1.14)}{5}{chapter*.7}%
+\contentsline {section}{T1.1 --- Credential, history, and configuration reconnaissance}{5}{section*.8}%
+\contentsline {section}{T1.2 --- Malicious post-install scripts}{6}{section*.9}%
+\contentsline {section}{T1.3 --- Compromised IDE extensions, language servers, MCP servers, or agent plugins}{7}{section*.10}%
+\contentsline {section}{T1.4 --- {\color {codeink}\ttfamily curl\ ...\ \textbar {}\ sh} installer of an untrusted source}{8}{section*.11}%
+\contentsline {section}{T1.5 --- Build script in a freshly cloned, unvetted repository}{9}{section*.12}%
+\contentsline {section}{T1.6 --- Lateral movement to local services}{9}{section*.13}%
+\contentsline {section}{T1.7 --- DNS-based exfiltration to an authorised resolver}{10}{section*.14}%
+\contentsline {section}{T1.8 --- Exfiltration via TLS to an allowlisted destination}{11}{section*.15}%
+\contentsline {section}{T1.9 --- Supply-chain compromise of an allowed dependency}{12}{section*.16}%
+\contentsline {section}{T1.10 --- Long-lived workload capability creep}{13}{section*.17}%
+\contentsline {section}{T1.11 --- Compromised browser, lateral movement}{13}{section*.18}%
+\contentsline {section}{T1.12 --- Display server: the host-session leg}{14}{section*.19}%
+\contentsline {section}{T1.13 --- Abstract-socket namespace escape via a shared network namespace}{15}{section*.20}%
+\contentsline {section}{T1.14 --- Host rootfs visibility: the unnarrowed system tree}{16}{section*.21}%
+\contentsline {chapter}{Family 2 --- Posture degradation (T2.1--T2.8)}{18}{chapter*.22}%
+\contentsline {section}{T2.1 --- Host security control deactivation}{18}{section*.23}%
+\contentsline {section}{T2.2 --- Security-degrading changes in workload-produced code}{19}{section*.24}%
+\contentsline {section}{T2.3 --- Introduction or preservation of secrets in unintended locations}{20}{section*.25}%
+\contentsline {section}{T2.4 --- Over-privileged resource provisioning}{21}{section*.26}%
+\contentsline {section}{T2.5 --- Suppression of failing security checks}{22}{section*.27}%
+\contentsline {section}{T2.6 --- Clipboard exfiltration}{22}{section*.28}%
+\contentsline {section}{T2.7 --- Screen capture and input synthesis}{23}{section*.29}%
+\contentsline {section}{T2.8 --- Cross-context persistence via workspace triggers}{24}{section*.30}%
+\contentsline {chapter}{Family 3 --- Workload-class-specific threats (T3.1--T3.10)}{26}{chapter*.31}%
+\contentsline {section}{T3.1 --- Setuid privilege escalation}{26}{section*.32}%
+\contentsline {section}{T3.2 --- Container escape}{27}{section*.33}%
+\contentsline {section}{T3.3 --- Container port exposure to LAN}{27}{section*.34}%
+\contentsline {section}{T3.4 --- Container volume over-mounting}{28}{section*.35}%
+\contentsline {section}{T3.5 --- Container running as root with host UID mapping}{29}{section*.36}%
+\contentsline {section}{T3.6 --- MCP server capability creep}{29}{section*.37}%
+\contentsline {section}{T3.7 --- AI agent prompt injection from project content}{30}{section*.38}%
+\contentsline {section}{T3.8 --- Substrate trust: the image-supplied runtime closure is unvetted}{31}{section*.39}%
+\contentsline {section}{T3.9 --- Delegated spawning: a workload instantiates sibling confinements}{32}{section*.40}%
+\contentsline {section}{T3.10 --- Standing-service delegation: a workload consumes a brokered cross-confinement capability}{34}{section*.41}%
+\contentsline {chapter}{Family 5 --- Confinement attack surface (T5.1--T5.4)}{36}{chapter*.42}%
+\contentsline {section}{T5.1 --- Boundary-gateway transaction surface}{36}{section*.43}%
+\contentsline {section}{T5.2 --- Cross-confinement relay abuse}{37}{section*.44}%
+\contentsline {section}{T5.3 --- Broker-as-relay trusted-computing-base growth}{38}{section*.45}%
+\contentsline {section}{T5.4 --- Host uid 0 mapped into the confinement's user namespace}{39}{section*.46}%
+\contentsline {chapter}{\headfont Part 2\hskip 1em\relax Out of scope}{41}{section*.47}%
+\contentsline {chapter}{Appendix A --- Incident register}{44}{appendix*.48}%
+\contentsline {section}{Ona Veto research (March 2026)}{44}{section*.49}%
+\contentsline {section}{Nx s1ngularity supply-chain attack (August 2025)}{44}{section*.50}%
+\contentsline {section}{Clinejection (disclosed February 2026, exploited January 2026)}{45}{section*.51}%
+\contentsline {section}{Mindgard research (October 2025)}{46}{section*.52}%
+\contentsline {section}{Agent-CLI CVEs (2025--2026)}{46}{section*.53}%
+\contentsline {section}{axios npm compromise (April 2026)}{46}{section*.54}%
+\contentsline {section}{runc CVE-2024-21626 (``Leaky Vessels'', January 2024)}{46}{section*.55}%
+\contentsline {chapter}{Appendix B --- Reconnaissance target enumeration}{48}{appendix*.56}%
+\contentsline {chapter}{Appendix C --- MITRE ATT\&CK mapping summary}{50}{appendix*.57}%
+\contentsline {chapter}{Appendix D --- Control-framework mapping (preliminary)}{52}{appendix*.58}%
+\contentsline {section}{SOC 2 (Trust Services Criteria)}{52}{section*.59}%
+\contentsline {section}{ISO/IEC 27001:2022 (selected controls)}{53}{section*.60}%
+\contentsline {section}{NIS2 (Directive (EU) 2022/2555, Article 21 measures)}{53}{section*.61}%
+\contentsline {section}{DORA (Regulation (EU) 2022/2554, for financial entities)}{54}{section*.62}%
+\contentsline {chapter}{Versioning and contribution}{55}{appendix*.63}%

@@ -1,0 +1,141 @@
+\hypertarget{network-egress}{%
+\chapter{6. Network egress}\label{network-egress}}
+
+The network is how a workload reaches the world, and how the world
+reaches back. Give a workload the host's network untouched and it has
+all of it: it can bind ports, open a connection to anywhere on the
+internet, sweep the local subnet, and reach the private services the
+host runs only for itself. A workload that has been turned reaches for
+exactly these: a channel out to a controller, a route for the user's
+data to leave by, a path sideways into the home network and the services
+on it (\texttt{T1.6}).
+
+The network is also the one resource a working agent cannot simply be
+denied. It has to reach a package registry, an API, a source it was told
+to build from. So the network is the first place both limbs are needed
+at once: absence, to take away the network the workload should never
+have, and interposition, to meter the narrow slice it needs.
+
+\hypertarget{absence-then-interposition}{%
+\section{6.1 Absence, then
+interposition}\label{absence-then-interposition}}
+
+Absence comes first, and it does most of the work. In the workload's
+world the host's network is not there: no interfaces, no routes, no
+inherited connections, none of the private services the host runs only
+for itself. A workload mapping its surroundings for an administrative
+port, or for a service the host meant only for its own use, finds
+nothing there to map (\texttt{T1.6}); the lateral-movement surface is
+not defended, it is absent. Most of what a network boundary has to stop
+never has to be stopped here, because there is nothing to connect to and
+no route by which to try. The forbidden connection cannot be formed.
+
+What absence cannot do is give the workload its registry back. The
+workload needs a route out, and a route out is exactly what was removed.
+So the egress that remains, the connection to the outside the workload
+is allowed to make, is carried by the second limb. The empty network has
+no path to the internet; what it has is the monitor. Each outbound
+connection is a request the workload makes and the monitor answers
+(\texttt{interpose-as-transaction}): the workload names a destination,
+the monitor checks it against the policy, and only if it passes does the
+monitor open the connection and hand it back. A connection the policy
+does not allow is one the monitor never opens, and the workload cannot
+reach past it to dial for itself, because it has no route except through
+the request.
+
+The workload names its destination; it never resolves it. It has no
+resolver to reach and no address of its own to offer: it asks for a
+name, and the monitor resolves that name and pins the address it
+resolved to before dialing. This is what closes off rebinding: a forged
+answer cannot swing an approved name onto a forbidden address, because
+the address the monitor dials is the address the monitor checked, and
+the workload was never given the chance to supply one. The decision
+falls on the destination that will be connected to, not the one that was
+asked for.
+
+And the monitor decides without carrying. Once a connection is approved
+the bytes flow directly between the workload and the destination, the
+monitor out of the path entirely (\texttt{control-not-data-plane}). It
+is the point every connection is decided at, and no part of what any
+connection moves. That is what keeps it small enough to trust: a thing
+that ruled on a million bytes would have to be trusted with a million
+bytes; a thing that rules only on whether a connection may open has
+almost nothing in it to get wrong.
+
+\hypertarget{the-contract}{%
+\section{6.2 The contract}\label{the-contract}}
+
+The contract is a spectrum, anchored at the safe end. A workload is
+given no network at all until the policy asks for one, and asked for
+conservatively unless the operator widens it: deny-by-default applied to
+reach, the same fail-safe defaults the filesystem and execution
+boundaries rest on {[}SaltzerSchroeder{]}.
+
+At the closed end is the empty network with nothing added back: no
+connection, no bind, no surface. It is where untrusted analysis and
+post-install scripts belong, things that have no business touching the
+network at all. A step out from there grants the isolated network a
+named set of destinations and nothing else: the workload reaches the
+registry and the API it was told it could reach, by asking for them, and
+reaches nothing else, because nothing else has been named. Wider still
+opens egress to the open internet, for the workload that must fetch from
+sources no allowlist can predict; the network is still its own, the
+connections are still brokered, the floor still holds. And at the open
+end is the host's network stack, shared directly: no separate network,
+no broker, the host's local services reachable once more. This last is
+the escape hatch, and it reinstates the very surface the chapter began
+by removing (\texttt{T1.6}), so the design will not compile it without
+an explicit reason written down beside it
+(\texttt{footgun-warn-dont-forbid}).
+
+Beneath every posture but the empty one runs a floor no policy can lift.
+A handful of destinations are denied in every mode, the widest included:
+the address a cloud platform answers its own metadata on and the
+link-local ranges, the standing targets of request-forgery and
+infrastructure reconnaissance. Even the open-internet posture cannot
+reach them, because the denial is not a policy choice but a property of
+the boundary. The broker holds one more line of the same kind: it will
+not become an open relay. A workload cannot hand it an arbitrary
+internal address and have it dialed, not a sibling's network, not the
+host's own services. Reaching a host service is its own named grant,
+deliberate and visible, never something egress backs into.
+
+\hypertarget{what-the-boundary-does-not-claim}{%
+\section{6.3 What the boundary does not
+claim}\label{what-the-boundary-does-not-claim}}
+
+The boundary governs where a workload connects. It does not govern what
+the workload says once connected, and the line between those two is not
+a corner the design cut: it is the edge of what a boundary of this kind
+can enforce at all.
+
+That a workload never opens a connection the policy forbids is a safety
+property: the forbidden connection is a thing that, once it happens,
+cannot be called back, and the monitor's whole purpose is to see that it
+does not happen. Complete mediation of the channels a workload may open
+is enforceable, and the monitor enforces it. What travels over a channel
+that was allowed to open is a different kind of thing. It is information
+flow, and information flow is not a safety property: no monitor watching
+one execution at a time can enforce it {[}Schneider{]}. So the monitor
+does not look. There is no payload inspection and no interception of
+encrypted streams; the bytes over an approved connection are opaque to
+it by design.
+
+This draws the residual exactly. When an operator allows a workload to
+reach an external API, what the workload chooses to send there is a
+data-governance question, not a confinement one (\texttt{T1.8}). The
+boundary mediates the channel completely and makes no claim about the
+payload. The claim it does not make is one no boundary of this shape
+could honour, which is why stating it plainly is the honest thing rather
+than a confession. The host-mode residual is of the same character: an
+operator who shares the host's stack has reopened the lateral surface on
+purpose (\texttt{T1.6}), and the boundary records the choice rather than
+overriding it.
+
+Across all of it the two limbs divide the surface the way the third
+chapter said they would. Absence takes the network the workload should
+never have had and leaves nothing to mediate; interposition meters the
+one slice that could not be removed, and meters it at the point of
+decision without ever touching the flow. Together they enforce a clean
+safety property (no forbidden connection occurs) and they stop exactly
+where safety stops, at the payload, which was never theirs to police.

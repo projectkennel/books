@@ -1,0 +1,67 @@
+Threats a user-level workload confinement deliberately does not address.
+Naming them is part of the boundary: an approach honest about what it
+does not cover is easier to reason about than one that implies total
+coverage. The entries keep their identifiers for citation, and are
+grouped where two share one reason.
+
+This set was originally Family 4 of the numbered index, before the
+out-of-scope threats were split onto their own \texttt{X} prefix; that
+is why the in-scope families run 1, 2, 3, 5 with no Family 4. The
+\texttt{X} numbers are what remained.
+
+\textbf{X1 --- a process running as a different real uid}, and
+\textbf{X2 --- a process running as root}, are handled by the mechanisms
+that already exist for them: ordinary Unix permissions for the first,
+root permissions and root-targeted mandatory access control for the
+second. A user-level confinement addresses code running as \emph{the
+user}, which is the gap those mechanisms leave open; it does not restate
+them.
+
+\textbf{X3 --- hardware-level attacks} (cold boot, DMA, side channels,
+Spectre-class) and \textbf{X4 --- physical access} are below any
+userspace approach's reach. Nothing a reference monitor does in
+userspace constrains an attacker with the bus or the hardware, and
+claiming otherwise would be the kind of overreach the catalogue exists
+to avoid.
+
+\textbf{X5 --- the user knowingly cooperating with the workload.} A user
+can grant any capability; an approach surfaces the grant and warns, but
+cannot override informed consent, and should not pretend to. This is out
+of scope only in its \emph{informed} form --- the user who understands
+what a grant permits and makes it anyway. It is distinct from, and must
+not be conflated with, the \emph{confused-deputy} case, where the user
+is manipulated into carrying an action they did not understand: a
+trigger the workload planted in its own tree firing later in the user's
+unconfined shell, or a channel the user is tricked into bridging. That
+case is squarely in scope and is catalogued at T2.8. The line is
+understanding: a deputy who knows is X5, a deputy who is fooled is a
+threat the approach is built to close.
+
+\textbf{X6 --- network-level attacks against the host's exposed
+services} are a different threat model. A user-level workload
+confinement defends the outbound direction --- what the workload reads
+and where it connects --- not the host's inbound attack surface, which
+is the province of a firewall and the services' own hardening.
+
+\textbf{X7 --- compromise of the underlying kernel primitives the
+approach depends on}, and \textbf{X8 --- compromise of the vetted system
+tools it depends on}, are beyond the boundary by definition: they are
+the trusted substrate the confinement is built on. An approach can keep
+that substrate small, pinned, and auditable (and the
+confinement-attack-surface family, T5, is about not enlarging it), but a
+defect in the kernel's own isolation primitives or in a vetted external
+tool is not something the layer above them can contain.
+
+\textbf{X9 --- a confined workload using its legitimate API access to
+exfiltrate data} is within-channel exfiltration via an authorised
+destination, documented as the T1.8 residual: unblockable at the egress
+boundary without destroying the workload's function, and a
+data-governance concern rather than an infrastructure one.
+
+\textbf{X10 --- semantic security regressions in workload-produced code
+that pattern matching cannot detect} require human review. An approach
+can flag known anti-patterns (T2.2), but cannot evaluate code for a
+novel logic flaw, an authorization bug, or an injection introduced with
+correct syntax and wrong meaning.
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}

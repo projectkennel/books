@@ -1,0 +1,122 @@
+# 13. The settled policy
+
+The policy from the previous chapter is what an operator writes. It is not what enforces. Between the
+two is a step skipped over until now: the written policy (with its inheritance chain, its
+deltas, its includes, and the signatures on each) has to be resolved into something a kennel can
+be held to, and that resolution is a great deal of fallible, security-critical work to be
+doing at the moment a workload starts. So it is not done then. The authored artefact and the enforced
+artefact are different things, and the work of turning one into the other happens once, in advance, at
+a step called compilation.
+
+This is not novel; it is how the systems Kennel is measured against already work. AppArmor authors a
+text profile and compiles it into a binary the kernel loads, and the text is never consulted again at
+enforcement. SELinux compiles a monolithic binary policy from its source modules. The authored form is
+for people to read and reason about; the enforced form is for the machine to apply; and the compile
+step between them is where the expensive and dangerous parts are paid for, deliberately and once.
+
+## 13.1 What compilation produces
+
+Compilation takes a leaf policy and produces a settled policy: a single flat document in which the
+inheritance chain has been folded down, the includes merged, the deltas applied, and every source
+signature and pin verified. It carries no template reference, no include, no delta operator: nothing
+left to resolve. Only the final effective rules remain, and they are signed as a unit by whoever
+compiled them.
+
+Everything hard happens here. The chain is walked from the leaf to the root and every link's signature
+checked against the tier entitled to have signed it; the includes are merged and any conflict between
+them is refused rather than guessed; the deltas are applied; the framework and template invariants are
+validated; the threat tags are checked against the catalogue; and the parts of the policy fixed for the
+whole installation are filled in. The result records its own provenance (every input that went into
+it, named by the key that signed it), so the settled policy can be audited later without the templates
+it came from being present at all. What a kennel starts from, then, is not a policy to resolve but a
+policy already resolved: read, checked once, and frozen.
+
+Who compiles a settled policy is not fixed to one tier. The common path has the operator compile their
+own leaf, but nothing obliges the tiers above to ship only adaptable templates. A maintainer or host can
+author a complete confinement, compile it, and publish it settled, ready to run with no leaf to write,
+beside the templates it offers for adaptation. The operator then has two shapes to choose between:
+inherit a template and write a leaf that adapts it, or run a finished policy a tier already baked and
+signed. Both are settled policies the runtime accepts on one signature, and either way the floor under
+the result is the framework's to re-assert at spawn, so running a policy baked upstream is no more an
+act of faith than running one's own.
+
+## 13.2 The signature and the floor
+
+A settled policy exists to be trusted on the strength of a single signature, and that is the larger
+half of what it buys. Handed one, the runtime does not re-walk the inheritance chain, re-apply the
+deltas, re-merge the includes, or re-verify the many source signatures that went into it. It verifies
+one signature (the compiling authority's, over the whole flat artefact) and on the strength of that
+accepts the entire body of the policy as resolved correctly. All the fallible work of resolution was
+done once, at compile; the signature is the runtime's reason to believe it was done right. The runtime
+does not re-argue the policy. It checks who vouched for it.
+
+There is exactly one thing the signature is not trusted for, and it is the floor. A signature says a
+key the system trusts vouched for this artefact; it does not say the artefact is a valid kennel,
+because those are different claims. The structural guarantees that make a kennel a kennel (that
+privilege cannot escalate through it, that the categorical denials hold, that the home directory is
+shadowed, that the metadata endpoint is unreachable) are the framework's guarantees, not the
+signer's. A trusted key vouching for a policy is no reason to believe the policy upholds them, because
+the key's authority is over what the operator may grant, not over what the framework must always deny.
+
+So the framework re-asserts its own invariants directly, at the moment of every spawn, after the one
+signature is verified, regardless of the signature, and regardless of any claim the artefact carries
+about having been checked already. This is the single, deliberate exception to an otherwise complete
+reliance on the signature: the runtime trusts the signer for the whole of the policy except the part
+the signer was never entitled to weaken. The check is cheap, a handful of structural assertions, and it
+makes one guarantee unconditional: no policy, however it was produced and whatever key signed it, can
+disable the protections that define a kennel (`reference-monitor`). A compromised compiling authority, a
+mistaken template, a forged claim of validity: none reaches the workload, because the last thing checked
+before the workload starts is not the policy's provenance but the policy's floor.
+
+## 13.3 Fail-closed
+
+Everywhere along this path, the response to something not checking out is the same: stop, and run
+nothing. A policy that does not parse is rejected before any signature is examined: there is no
+verifying the integrity of bytes that have no structure, so a malformed artefact never reaches the part
+of the system that would trust a signature on it. A signature that does not verify, an include that
+conflicts with another, a reference whose bytes have changed since they were pinned, an invariant a
+delta tried to weaken, a placeholder left unfilled at spawn: each refuses the kennel outright. No
+workload starts on a policy that failed a check, and no partial kennel is built from one that failed
+halfway; the failure is categorical, and it names what failed.
+
+There is no degraded mode, and that absence is deliberate. A confinement that falls back to something
+weaker when it cannot apply what was asked is a confinement an attacker works to make fail. A kennel
+that cannot be resolved to a valid settled policy, or whose settled policy cannot be verified and
+floored at run, does not come up at all (`refuse-to-start`). The safe state when something is wrong is
+the empty one (nothing running), and the system holds to it rather than start a workload under a
+confinement it is unsure of: fail-safe defaults [SaltzerSchroeder], applied to starting and not only to
+granting.
+
+One more property keeps the enforced artefact honest. A few grants are derived rather than written (a
+writable path implies a readable one, and so on), but the derivation is done at compile and written
+into the settled policy explicitly, never left to happen invisibly at run. What a kennel enforces is
+exactly what its settled policy says, down to the grants the operator never typed, so the enforced
+reality can always be reconciled with the authored intent by reading the artefact. Nothing the operator
+did not intend appears, and nothing they did intend is silently widened.
+
+## 13.4 Authored in one place, enforced in another
+
+Putting all the resolution at compile time does more than keep the spawn fast; it shrinks what the
+running system must be trusted to do. The path that starts a kennel links none of the machinery that
+resolves a policy: no template parsing, no chain-walking, no include merging, no delta application, no
+verifying of source signatures. All of that crossed its gate at compile and need never run again. What
+the spawn path does is verify one signature, re-assert the floor, fill in the per-instance values, and
+build the kennel: a small, fixed surface that does not grow with the complexity of the policy it
+enforces.
+
+This is what lets confinement be authored in one place and enforced in another. An organisation can
+compile its policies centrally (where the templates, the keys, and the review live) and ship only the
+signed settled artefacts to the machines that run workloads. Those machines need not hold a single
+template or run the resolver; their entire policy-trust surface is one signature check and the floor
+re-assertion. The operator who writes a leaf on their own machine and the fleet that enforces a settled
+policy pushed from a central repository are doing the same thing at different scales, and in both the
+dangerous part was paid for before the workload ever started.
+
+The life of a policy, then, is a sequence of refusals as much as a sequence of steps. It is authored as
+intent, compiled once with every check applied and any failure stopping the whole, settled into a flat
+artefact that carries its own provenance, and run behind a single signature and a floor the framework
+re-asserts for itself, trusting no signer to have left it intact. What this leaves unanswered is the
+question the signatures keep raising: whose keys does the system trust, for what, and why is that the
+right division? Which tier may vouch for a floor, which may only grant within one, and which may sign
+nothing that others must rely on: that is the consent model the whole design rests on, and it is the
+last thing to set down.

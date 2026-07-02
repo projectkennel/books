@@ -1,0 +1,128 @@
+\documentclass[11pt,twoside,openany]{memoir}
+
+% ---------- trim & type block (7x10in technical-book trim) ----------
+\setstocksize{254mm}{178mm}
+\settrimmedsize{\stockheight}{\stockwidth}{*}
+\setlrmarginsandblock{22mm}{18mm}{*}   % inner, outer
+\setulmarginsandblock{24mm}{26mm}{*}   % upper, lower
+\setheaderspaces{*}{9mm}{*}
+\checkandfixthelayout
+
+% ---------- fonts (xelatex) ----------
+\usepackage{fontspec}
+\usepackage{microtype}
+\setmainfont{TeX Gyre Pagella}[Numbers=OldStyle]
+\setsansfont{TeX Gyre Heros}[Scale=0.90]
+\setmonofont{Latin Modern Mono}[Scale=0.95]
+\newfontfamily\blockmono{Latin Modern Mono}[Scale=1.0]
+\newfontfamily\headfont{TeX Gyre Pagella}
+
+% ---------- colour ----------
+\usepackage{xcolor}
+\definecolor{ink}{HTML}{1A1A1A}
+\definecolor{accent}{HTML}{3A5A78}     % restrained slate-blue
+\definecolor{rulecol}{HTML}{B8C2CC}
+\definecolor{codeink}{HTML}{222222}
+\color{ink}
+
+% ---------- inline code = slugs / threat tags ----------
+% keep monospace, slightly smaller, dark ink (no green, no box)
+\let\oldtexttt\texttt
+\renewcommand{\texttt}[1]{{\color{codeink}\ttfamily #1}}
+
+% ---------- code blocks (fancyvrb env 'kennelcode') ----------
+\usepackage{calc}
+\usepackage{longtable,booktabs,array}
+% pandoc's \real / \pandocbounded helpers for table column widths
+\providecommand{\real}[1]{#1}
+\providecommand{\pandocbounded}[1]{#1}
+\usepackage{fancyvrb}
+\usepackage{fvextra}
+\usepackage{xcolor}
+\DefineVerbatimEnvironment{kennelcode}{Verbatim}{%
+  fontsize=\fontsize{9.5}{11.5}\selectfont, breaklines=true, breakanywhere=true,
+  frame=leftline, framerule=1pt, rulecolor=\color{accent},
+  framesep=8pt, xleftmargin=10pt, formatcom=\color{codeink}\blockmono}
+
+% ---------- headings (sans) ----------
+\setsecnumdepth{none}   % titles carry their own "1.", "1.1" numbers
+\setsecheadstyle{\large\headfont\bfseries\color{ink}}
+\setsubsecheadstyle{\normalsize\headfont\bfseries\color{ink}}
+\setbeforesecskip{-1.6\onelineskip plus -0.4\onelineskip minus -0.2\onelineskip}
+\setaftersecskip{0.7\onelineskip}
+
+% chapter opener: clean, sans, with a thin rule
+\makechapterstyle{kennel}{%
+  \renewcommand*{\chapnamefont}{\headfont}
+  \renewcommand*{\chaptitlefont}{\Huge\headfont\bfseries\color{ink}}
+  \renewcommand*{\printchaptername}{}
+  \renewcommand*{\printchapternum}{}
+  \renewcommand*{\afterchapternum}{}
+  \renewcommand*{\printchaptertitle}[1]{%
+    \raggedright\chaptitlefont ##1\par
+    \vskip4pt {\color{rulecol}\hrule height 1pt}\vskip6pt}
+}
+\chapterstyle{kennel}
+\setlength{\beforechapskip}{18mm}
+\setlength{\afterchapskip}{10mm}
+
+% ---------- running heads & folios ----------
+\makepagestyle{kennel}
+\makeevenhead{kennel}{}{}{\headfont\small\leftmark}
+\makeoddhead{kennel}{\headfont\small\rightmark}{}{}
+\makeevenfoot{kennel}{}{\headfont\small\thepage}{}
+\makeoddfoot{kennel}{}{\headfont\small\thepage}{}
+\makepsmarks{kennel}{%
+  \createmark{chapter}{both}{shownumber}{}{}%
+  \createmark{section}{right}{shownumber}{}{}}
+\nouppercaseheads
+\pagestyle{kennel}
+
+% ---------- TOC look ----------
+\maxtocdepth{section}
+\renewcommand{\cftchapterfont}{\headfont\bfseries}
+\renewcommand{\cftchapterpagefont}{\headfont\bfseries}
+\renewcommand{\cftsectionfont}{\normalfont}
+\setlength{\cftbeforechapterskip}{6pt}
+
+% ---------- part divider (custom, full page) ----------
+\usepackage{graphicx}
+\newcommand{\bookpart}[2]{%
+  \clearpage
+  \thispagestyle{empty}%
+  \phantomsection\addcontentsline{toc}{chapter}{\protect\headfont Part #1\quad #2}%
+  \null\vskip4cm
+  {\raggedright\headfont
+    {\fontsize{14}{16}\selectfont\color{accent}\MakeUppercase{Part #1}}\par
+    \vskip6mm
+    {\color{rulecol}\hrule height 1pt}\vskip6mm
+    {\Huge\bfseries\color{ink} #2}\par}%
+  \vfill\clearpage}
+
+% paragraph look
+% paragraph look: a blank line between paragraphs (block style, matches the markdown source)
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.8\baselineskip plus 0.2\baselineskip minus 0.1\baselineskip}
+\frenchspacing
+
+% ---------- diagrams (TikZ, TCP/IP Vol 1 line-diagram idiom) ----------
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,calc}
+
+% ---------- pandoc compatibility ----------
+\providecommand{\tightlist}{\setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+\providecommand{\passthrough}[1]{#1}
+\usepackage[hidelinks]{hyperref}
+\hypersetup{pdftitle={Threat Catalogue for User-Level Workload Confinement}, pdfauthor={Remco van Mook}}
+
+% ---------- justification tolerance for unbreakable mono tokens ----------
+\tolerance=1200
+\setlength{\emergencystretch}{3em}
+
+% win the cleardoublepage hook ordering against hyperref: no forced-recto blanks
+\AtBeginDocument{\let\cleardoublepage\clearpage}
+
+% chapter-opening pages: memoir aliases 'chapter' to 'plain' (folio in the footer).
+% Make a real 'chapter' pagestyle so the folio sits in the same top-outer corner as normal pages.
+
+

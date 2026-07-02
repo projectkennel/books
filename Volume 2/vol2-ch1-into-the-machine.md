@@ -1,0 +1,176 @@
+# 1. Into the machine
+
+The design volume set out what a kennel is: a reference monitor at the user level, a mediator every
+access passes through that the workload cannot bypass or tamper with, built from two limbs. One limb is
+construction, where a resource is simply absent from the kennel's world. The other is interposition,
+where a resource that cannot be removed is reachable only through a transaction the monitor authorises.
+None of that named a kernel.
+
+A modern Linux kernel offers a set of facilities that, taken one at a time, each do a small part of this:
+hide a class of resource, mediate access to another, hold a privilege for a moment. No single one of them
+is a sandbox. The confinement is the weave: the facilities combined, resource class by resource class, so
+that each class is either constructed away or placed behind a mediated transaction. What follows names
+the threads and shows how they cross; the later chapters pick up each in turn.
+
+## 1.1 What counts as a control
+
+Not every restriction the kernel can express is a control in the sense the reference monitor needs. The
+test is narrow and the design holds to it: a control counts only if it is enforced by the kernel and keyed
+to process identity, such that the confined workload cannot forge or bypass it from inside. A rule the
+workload sidesteps by changing its source address, rewriting its environment, or choosing a different path
+to open is a speed bump, not a control, and the design does not count it as one.
+
+That test is the tamperproof property of the reference monitor (`reference-monitor`) restated in kernel
+terms, and it does the sorting. It is why the facilities below are the ones that carry the limbs and other
+plausible-looking mechanisms are not: a check the workload runs against itself, a convention it is asked to
+honour, a filter it can route around all fail the test by construction. It is also why some facilities
+appear only as fallbacks. Where the first-choice mechanism is unavailable on an older kernel, a coarser one
+may carry the class at reduced fidelity, and where even that is missing the policy does not run at all
+rather than pretend (`refuse-to-start`).
+
+## 1.2 The construction facilities
+
+The construction limb is built from namespaces, and its character is absence: what was never mapped or
+never bound into the kennel is not there to be reached, mediated or not (`construction-by-absence`).
+
+The user namespace is the foundation the rest stands on. A kennel runs in its own, created as the operator
+so that the namespace is operator-owned, with precise identity maps rather than a subuid range: the host
+root line and the operator's own line, plus one per granted group. That gives the kennel a real uid 0 and
+`CAP_SYS_ADMIN` inside the namespace and nowhere else, which is what permits the `mount` and `pivot_root`
+that build the view. The mapping of host uid 0 is the one privileged act in the whole construction, and it
+is the reason a kennel is built by a privileged step rather than by the workload itself (T5.4). The mount
+namespace carries the constructed view: the kennel sees the filesystem its policy binds in and a root
+pivoted away from the host's, so a path that was not granted is not merely denied but absent. The PID
+namespace makes the kennel's first process PID 1 with a fresh `/proc`, so the host's processes are not
+visible to enumerate, and the IPC and network namespaces remove the System V and network surfaces the same
+way. Each namespace takes a class of resource out of the kennel's world rather than guarding it, which is
+the cheaper and stronger move wherever it can be made.
+
+## 1.3 The interposition facilities
+
+Some resources cannot be removed, because the kennel exists to use them: it must execute some binaries,
+reach some paths, open some network destinations. For these the design does not remove the class but places
+it behind a mediated transaction (`interpose-as-transaction`). Four kernel facilities carry that limb.
+Three are the standard sandbox vocabulary and are described here; the fourth, the one that does not look
+like it belongs, gets its own section after.
+
+Landlock is the principal one. It applies a kernel-enforced, unforgeable, identity-keyed access policy to
+the filesystem (read, write, and with `FS_EXECUTE` a proper execute semantics), to network ports, and on
+ABI 6 to the scoping of abstract AF_UNIX sockets and signals. It is the mechanism that lets a kennel hold a
+path it may read but not write, or execute one binary and not another, with the decision made in the kernel
+and not in code the workload can reach. Seccomp carries the syscall surface that Landlock does not express:
+the filter that refuses `ptrace`, the `TIOCSTI` terminal-injection guard, and the `connect()` restriction
+that stands in for abstract-socket scoping on kernels below ABI 6. The cgroup BPF programs carry network
+egress: the `inet4_connect` and `inet6_connect` hooks enforce the address allowlist in the kernel, on the
+connecting process, with no path around them, and this is the egress floor present in every network mode but
+the fully isolated one. Those three are the interposition vocabulary a sandbox reader already knows. The
+fourth is not.
+
+## 1.4 Binder
+
+The fourth interposition facility will stop a reader who knows the others cold, because it comes from
+Android: binder, exposed on Linux as binderfs. Its presence is not exotic taste, and the reason is worth
+setting out, because binder carries the whole local-services and inter-kennel story in the chapters ahead.
+
+The problem it solves is one a socket cannot. Several of the things a kennel must talk to, the session bus
+or a sibling service kennel, speak a protocol that grants too much to forward raw while the application
+expects a conforming endpoint at a familiar path. Forwarding the raw socket makes the grant auditable once,
+at connect time, and then surrenders every call made across it. What the design needs is a chokepoint at
+the call rather than the connection: one point where every transaction a kennel makes with a service is
+mediated and audited, with kenneld the decision point for each, and where a kennel cannot reach a service
+it was not granted. The same primitive has to carry communication between kennels, a client kennel calling
+a standing service kennel, with neither holding ambient access to the other.
+
+binderfs supplies all of that off the shelf. It is the kernel's per-mount-namespace Binder filesystem,
+stable well under the 6.10 floor the kennel already requires for Landlock. It gives synchronous
+call-and-return transactions with kernel-managed identity and no application framing; a service registry
+brokered by a well-known node that kenneld occupies as context manager; references that are opaque kernel
+objects a process either holds or does not, with no path to enumerate and no abstract name to probe, so a
+reference passes the test of §1.1 by construction; exact kernel-driven death notification; and per-instance
+isolation, each binderfs mount a fully independent instance the way devpts and tmpfs are, so two kennels'
+buses share no state. The property that turns it from a curiosity into a fit is that binderfs is
+`FS_USERNS_MOUNT`: it mounts unprivileged inside the kennel's own user namespace, so the inter-namespace
+gateway is kernel-mediated and unforgeable and yet cost no host capability to stand up.
+
+What the design declines is the part of Binder that is hard. Android passes node references between
+processes and maintains the capability graph that results, which is most of what makes that implementation
+subtle. The kennel uses none of it: references are issued by kenneld as context manager and do not transfer
+between kennels, which keeps the properties that matter, unforgeable references, synchronous calls, death
+notification, per-instance isolation, and drops the bookkeeping that does not earn its place.
+
+That leaves the real question, which is why adopt an IPC system from another world at all rather than write
+a small bus over socketpairs. The answer is the supply discipline (`dont-roll-your-own`). A homebrew bus
+would reimplement transaction routing, reference management, death notification, and instance isolation
+that binderfs already provides and that Android has run at a scale no in-tree bus will see, and the kennel
+already speaks ioctl to the kernel for Landlock and BPF, so binder's ioctl ABI is the same shape of code
+rather than a new dependency. The unfamiliar primitive is the conservative choice, not the adventurous one.
+How kenneld holds the context-manager node, how the facades transact across the boundary, and the wire
+format itself come later; here it is enough that the strangest thread in the weave is there because it is
+the one that fits.
+
+## 1.5 Privilege and identity
+
+The third group of facilities is not a limb but the handling of privilege itself, and the design's posture
+is to hold it briefly and in one place. File capabilities let the one privileged binary carry exactly the
+capabilities its construction step needs and no general root, so the privilege that builds a kennel is a
+named, narrow set rather than ambient authority (`rule-of-1`). `PR_SET_NO_NEW_PRIVS` is set unconditionally
+before the workload runs: it is the precondition seccomp requires, and it is the kernel's bar on a process
+regaining privilege through a later `exec`, so a workload cannot climb back up through a setuid binary it
+finds. The uid and gid maps and the `capset` that drops the bounding set are what take the constructed
+kennel from its transient uid 0 down to the operator's identity with nothing attached to it the policy did
+not grant. This is `split-the-uid` in mechanism: the kennel keeps an identity and is stripped of the
+authority that identity carried on a traditional system. How these are sequenced, which binary holds which
+capability, and for how long, is the subject of the next chapter.
+
+## 1.6 The weave
+
+No single facility is sufficient, and the design says so plainly: the mechanisms are used in combination,
+resource class by resource class. The map is the architecture. Filesystem access is a mount namespace for
+the view and Landlock for the access inside it. Execution is Landlock `FS_EXECUTE` and `PR_SET_NO_NEW_PRIVS`
+together. A network address is the cgroup BPF connect hooks with no fallback, because nothing coarser meets
+the test. Abstract AF_UNIX is Landlock scoping on ABI 6 and a seccomp `connect()` filter below it. Process
+visibility is a mount namespace with `hidepid` and a PID namespace for the stronger cut. Most classes are
+carried by a primary mechanism with a fallback named beside it, and a few are carried by one mechanism with
+no fallback at all, which means the kernel must provide it or the kennel does not start.
+
+The weave is the reason the confinement degrades gracefully in fidelity and never silently in safety. Pull a
+thread on an older kernel and the class it carried often retains a coarser fallback, at a fidelity the policy
+can see and a residual the catalogue records. Pull a thread that has no fallback and the policy refuses to
+apply rather than run a kennel that looks confined and is not. Complete mediation is this map holding for
+every class at once; the verifiable property is that where it cannot hold, the system declines rather than
+degrades (`refuse-to-start`).
+
+## 1.7 The kernel floor
+
+Because the weave depends on specific kernel facilities, a kennel depends on a specific minimum kernel, and
+the design states the floor rather than discovering it at runtime. Landlock is the load-bearing thread, and
+its versions set the floor: the filesystem ACL arrives at 5.13, network ports at 6.7, `FS_EXECUTE` at 6.10,
+and the ABI 6 scoping that natively isolates abstract AF_UNIX and signals at 6.12. The project floor is
+6.10, ABI 5; on 6.12 and above the scoping fallbacks fall away and the isolation is native. The cgroup v2
+hierarchy, the cgroup BPF connect hooks, and the namespaces are all long-standing and effectively universal
+on a modern system. At policy load the kennel checks the features its policy requires against the kernel it
+is on, and where a required feature is missing it refuses to apply the policy and names what is absent rather
+than failing obscurely or proceeding without the control.
+
+One requirement is a deployment property rather than a kernel version. The construction rests on an
+unprivileged user namespace, and some hardened distributions restrict that by default. Where the restriction
+is in force the namespace can be created but holds no capabilities inside it, so the first map write fails and
+no kennel can be built. The supported posture is an AppArmor profile that grants user-namespace creation to
+the daemon binary alone, restoring the one capability without relaxing the host-wide restriction. It is a
+one-time install step, the complement to the file capabilities the privileged binary carries, and where the
+restriction is absent no profile is needed.
+
+## 1.8 The same weave elsewhere
+
+Naming these mechanisms does not make the design Linux; it makes this volume Linux. The reference monitor and
+its two limbs are platform-neutral, and the porting assessments weave the same limbs from another kernel's
+facilities, graded against the same test from §1.1. On macOS the only viable enforcement layer is Seatbelt,
+undocumented and version-volatile, and it grades inferior to Linux on recon-resistance and on same-uid
+loopback isolation, with the shortfall recorded as a residual rather than hidden. On FreeBSD, jails with VNET
+and Capsicum grade equivalent or superior on most controls, with the private network stack turning the egress
+path into a trusted plumbing problem the port must solve deliberately. The threads differ; the weave is the
+same shape, and a port that graded equal across the board would be hiding exactly the residuals an honest
+assessment exists to surface.
+
+With the toolkit and the weave in hand, the rest of this part picks up the threads one at a time. The first
+is the set of processes that do the weaving and the single one among them that holds privilege.

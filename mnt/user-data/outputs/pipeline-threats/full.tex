@@ -1,0 +1,52 @@
+\input{preamble.tex}
+
+\begin{document}
+
+% ---- Title page (text-only, no cover image) ----
+\begingroup
+\thispagestyle{empty}
+\centering
+\vspace*{12mm}
+\includegraphics[width=105mm]{kennelhero.png}\par
+\vspace{12mm}
+\raggedright
+{\headfont\bfseries\fontsize{26}{30}\selectfont Threat Catalogue\par}
+\vspace{4mm}
+{\headfont\fontsize{16}{20}\selectfont for User-Level Workload Confinement\par}
+\vspace{16mm}
+{\normalfont\large A standalone, citable catalogue of the threats posed by\\
+unvetted code running at the interactive user level, and of the\\
+confinement approaches that address them.\par}
+\vfill
+{\normalfont\large Remco van Mook\par}
+\vspace{2mm}
+{\normalfont Version 0.5 \textperiodcentered\ 2026\par}
+\endgroup
+\clearpage
+\thispagestyle{empty}\null\clearpage
+
+% ---- Front matter prose ----
+\frontmatter
+\pagenumbering{roman}
+\input{frontbody.tex}
+\clearpage
+
+% ---- TOC ----
+\tableofcontents*
+\clearpage
+
+% ---- Body ----
+\mainmatter
+\pagenumbering{arabic}
+\setcounter{page}{1}
+
+\bookpart{1}{The threats in scope}
+\input{body1.tex}
+
+\bookpart{2}{Out of scope}
+\input{body2.tex}
+
+\appendix
+\input{body3.tex}
+
+\end{document}
