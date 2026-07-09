@@ -27,19 +27,43 @@ shape is fixed and simple.
 
 Resolution is a fold down a chain. The compiler walks a leaf's `template_base` to the root template, the minimal
 `base-confined` that every confined template extends, and folds the chain root-first into one effective policy
-with no base left to resolve. Composition follows the model an SSH client uses for its configuration. A scalar
-takes the most-derived value that sets it and inherits where a level is silent. A list field is set by the most
-derived bare assignment, a child's list replacing the inherited one rather than appending to it, which is the
-behaviour every in-tree template relies on; the additive and subtractive operators a leaf author writes as
-explicit add and remove deltas are the later increment on top of that set-or-inherit base. Object sub-tables
-merge shallowly, field by field, the child overriding. One list field breaks the replace rule on purpose: the
-invariant denies are unioned down the chain and never replaced, so a child can only add to them, because their
-non-removability is exactly what makes them invariants. Inheritance is single-parent with no diamonds, and a
-user's own policy is a leaf that extends one template and is not itself extensible, which keeps developers from
-accumulating unmaintained team templates that drift from the reviewed set. Where unrelated templates must share
-a cross-cutting fragment, a corporate egress allowlist or a mandated audit block, that fragment is pulled in as
-a signed, version-pinned, additive-only include rather than forced into a contrived hierarchy. The folded
-result is then translated into the runtime's effective form, the flat representation the enforcement path reads.
+with no base left to resolve. Composition follows the model an SSH client uses for its configuration, and every
+field falls into exactly one of three classes.
+
+A **scalar** takes the most-derived value that sets it and inherits where a level is silent. Object sub-tables
+merge shallowly, field by field, the child overriding.
+
+A **list-shaped grant** composes uniformly, whatever it grants: a bare assignment *sets* (a child's non-empty
+list replaces the inherited one; an empty or absent one inherits), and the explicit `add`/`remove` deltas
+*increment* that set-or-inherit base. This one rule covers the path lists (`fs.read`, `fs.write`, `fs.deny`,
+`exec.allow`), the typed grant lists (`unix.allow`, `net.proxy.allow`, `net.proxy.deny.policy`, `net.udp.allow`,
+the `net.bpf` ACLs, `ssh.destinations`, `fs.dev.passthrough`), the mesh demand side (`consumes`), the spawn
+target set (`spawn.allow`), and the supplementary groups (`identity.groups`) — every delta entry carrying its
+own `reason`, because an increment is a grant. A bare-set that discards a non-empty inherited list is legal — a
+template may define its own floor, a leaf may redefine a surface wholesale — but never silent: the compiler
+warns, naming the field and what was dropped, so the clobber that once showed only in a compiled-artefact diff
+shows at compile time.
+
+A **floor** unions down the chain and is never replaced: a child can only add to it, because non-removability
+is exactly what makes it a floor. The invariant denies (`net.proxy.deny.invariant`), the seccomp denylist, the
+exec and env denylists (`exec.deny`, `env.deny`), and the socket-family denylist (`net.bpf.deny_families`) all
+compose this way; there is no remove form for any of them.
+
+Three list fields stay set-replace deliberately, each for a stated reason. `provides` — the mesh supply side —
+is attributed wholesale to one declaring layer, because the reserved-namespace gate resolves that layer's
+signing tier to decide whether a reserved name may be claimed at all; per-entry composition would smear that
+authority attribution across layers. The `mutable` manifest is the spawn target template's own contract about
+which of its fields a spawner may patch; letting an includer inject mutability additively would be a hole, not
+a feature. And `audit.sinks` is deployment configuration — where events go, not what is granted. All three
+still get the clobber warning.
+
+Inheritance is single-parent with no diamonds, and a user's own policy is a leaf that extends one template and
+is not itself extensible, which keeps developers from accumulating unmaintained team templates that drift from
+the reviewed set. Where unrelated templates must share a cross-cutting fragment, a corporate egress allowlist
+or a mandated audit block, that fragment is pulled in as a signed, version-pinned, additive-only include rather
+than forced into a contrived hierarchy — add-only means exactly the increment forms above, never a bare set.
+The folded result is then translated into the runtime's effective form, the flat representation the enforcement
+path reads.
 
 ## 16.3 The signature is the commitment
 

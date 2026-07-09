@@ -1,6 +1,6 @@
 # 20. The policy language
 
-*Generated from `schema/policy.toml.schema`. Current as of 0.5.0.*
+*Generated from `schema/policy.toml.schema`. Current as of 0.6.0.*
 
 
 ## `[audit]`
@@ -80,28 +80,23 @@ facility = "..."
 
 ## `[cap]`
 
-`[cap]`: capabilities and `no_new_privs`.
+`[cap]`: `no_new_privs`.
 
 ```
 [cap]
 # optional
-bounding_set = ["..."]
 no_new_privs = true
 ```
-
-`bounding_set`
-:   optional. The capability bounding set to retain (empty drops them all).
 
 `no_new_privs`
 :   optional. `PR_SET_NO_NEW_PRIVS`. A framework invariant once resolved (must be true).
 
 
-Example, from `toml/templates/base-bwrap`:
+Example, from `toml/templates/base-flatpak`:
 
 ```
 [cap]
 no_new_privs = true
-bounding_set = []
 ```
 
 ## `[[consumes]]`
@@ -148,11 +143,11 @@ Example, from `toml/templates/gui-session`:
 
 ```
 [[consumes]]
-name = "org.projectkennel.wayland"
+name = "org.projectkennel.wayland-session"
 shape = "af-unix"
 at = "/tmp/wayland-0"
 required = true
-reason = "the confined desktop session reaches its display server — a broker-spawned nested compositor — over the mesh"
+reason = "the confined desktop session (its own nested labwc) reaches its host window through the broker — the full-desktop display capability, distinct from the single-window org.projectkennel.wayland"
 ```
 
 ## `[dbus]`
@@ -240,7 +235,7 @@ set      = "..."
 :   optional. Variables forced to a specific value. Declared last: as a TOML table it must
 
 
-Example, from `toml/templates/base-bwrap`:
+Example, from `toml/templates/base-flatpak`:
 
 ```
 [env]
@@ -289,11 +284,26 @@ shell    = "..."
 :   optional. The kennel's login shell: the synthetic-`passwd` `pw_shell` and
 
 
-Example, from `toml/templates/argv-tool`:
+Example, from `toml/templates/ai-coding-strict`:
 
 ```
 [exec]
-allow = ["/bin/echo", "/usr/bin/echo", "/bin/cat", "/usr/bin/cat", "/bin/true", "/usr/bin/true", "/bin/sh"]
+# Only the binaries no fragment provides stay inline here; the shell, the POSIX
+# userland, and the toolchains come from the `include` above.
+allow = [
+    "/usr/bin/cmake",
+    "/usr/bin/node",
+    "/usr/bin/npm",
+    "/usr/bin/npx",
+    "/usr/bin/patch",
+    "/usr/bin/pip",
+    "/usr/bin/pip3",
+    "/usr/bin/pnpm",
+    "/usr/bin/python3",
+    "/usr/bin/ssh",
+    "/usr/bin/ssh-add",
+    "/usr/bin/yarn",
+]
 ```
 
 ## `[fs]`
@@ -308,7 +318,7 @@ exclusive = ["..."]
 read     = ["..."]
 write    = ["..."]
 ```
-Contains: `[fs.dev]`, `[fs.home]`, `[fs.proc]`, `[fs.tmp]`.
+Contains: `[fs.cwd]`, `[fs.dev]`, `[fs.home]`, `[fs.proc]`, `[fs.tmp]`.
 
 
 `deny`
@@ -324,11 +334,58 @@ Contains: `[fs.dev]`, `[fs.home]`, `[fs.proc]`, `[fs.tmp]`.
 :   optional. Paths granted write. Replace or increment at the same key.
 
 
-Example, from `toml/templates/argv-tool`:
+Example, from `toml/templates/base-flatpak`:
 
 ```
 [fs]
-read = ["/usr/**", "/bin/**", "/lib/**", "/lib64/**"]
+# The curated base: only the subtrees a dynamically-linked workload needs.
+# Matches base-confined exactly — construction-by-absence (§4.2).
+read = [
+    "/usr/bin/**", "/usr/sbin/**",
+    "/usr/lib/**",
+    "/usr/lib64/**",
+    "/usr/libexec/**",
+    "/usr/share/**",
+    "/lib/**", "/lib64/**",
+    "/etc/ssl/**", "/etc/pki/**",
+    "/etc/ld.so.conf", "/etc/ld.so.conf.d/**", "/etc/ld.so.cache",
+    "/etc/alternatives/**",
+    "/proc/self/**", "/proc/cpuinfo", "/proc/meminfo", "/proc/version",
+    "/sys/devices/system/cpu/**",
+]
+write = []
+```
+
+### `[fs.cwd]`
+
+`[fs.cwd]`: materialise the invocation cwd into the view.
+
+```
+[fs.cwd]
+# optional
+grant    = "none" | "read" | "write"
+required = ["..."]
+# decoration
+reason   = "..."
+```
+
+`grant`
+:   optional. Whether and how the invocation cwd is bound (`none`/`read`/`write`; default `none`). One of `none`, `read`, `write`.
+
+`reason`
+:   decoration. Why the cwd grant is warranted. Required when `grant` is not `none`; compile-time-only
+
+`required`
+:   optional. Dirent markers that must be present in the cwd for the grant to apply (e.g. `.git`,
+
+
+Example, from `toml/policies/claude`:
+
+```
+[fs.cwd]
+grant = "write"
+required = [".git", ".claude/"]
+reason = "the agent edits the project it is invoked from; the writable root is a project the operator marked for agent use (.claude), carrying the T2.8 trust manifest"
 ```
 
 ### `[fs.dev]`
@@ -362,7 +419,7 @@ Contains: `[[fs.dev.passthrough]]`.
 :   decoration. Threat tags, required to carry an `exposed` tag (passthrough widens the
 
 
-Example, from `toml/templates/base-bwrap`:
+Example, from `toml/templates/base-flatpak`:
 
 ```
 [fs.dev]
@@ -394,7 +451,7 @@ shadow   = true
 :   optional. Whether `$HOME` is shadowed by a constructed view (must be true once resolved).
 
 
-Example, from `toml/templates/base-bwrap`:
+Example, from `toml/templates/base-flatpak`:
 
 ```
 [fs.home]
@@ -415,7 +472,7 @@ hidepid  = true
 :   optional. Mount `/proc` with `hidepid=2`.
 
 
-Example, from `toml/templates/base-bwrap`:
+Example, from `toml/templates/base-flatpak`:
 
 ```
 [fs.proc]
@@ -440,7 +497,7 @@ writable = true
 :   optional. Whether the workload may **write** to its `/tmp` tmpfs (the Landlock write grant). Absent ⇒
 
 
-Example, from `toml/templates/base-bwrap`:
+Example, from `toml/templates/base-flatpak`:
 
 ```
 [fs.tmp]
@@ -457,6 +514,7 @@ size = "512M"
 # optional
 group    = "..."
 groups   = ["..."]
+hostname = "..."
 user     = "..."
 ```
 
@@ -465,6 +523,9 @@ user     = "..."
 
 `groups`
 :   optional. Supplementary group names to retain (e.g. `["dialout", "plugdev"]`). The user
+
+`hostname`
+:   optional. The kennel's masked hostname (opt-in persona coherence, W12).
 
 `user`
 :   optional. The workload's masked user name, `$USER`/`$LOGNAME` and the synthetic
@@ -488,12 +549,12 @@ ttl_action = "exit" | "warn" | "renew"
 :   optional. What to do at TTL expiry: `"exit"` (alias `"stop"`, the default) ends the One of `exit`, `warn`, `renew`.
 
 
-Example, from `toml/templates/argv-tool`:
+Example, from `toml/templates/ai-coding-strict`:
 
 ```
 [lifecycle]
-ttl = "5m"
-ttl_action = "exit"
+ttl = "8h"
+ttl_action = "warn"
 ```
 
 ## `[[mutable]]`
@@ -543,13 +604,12 @@ reason   = "..."
 :   optional. Predicate bound: the root the value resolves under (`RESOLVE_IN_ROOT`, traversal-free).
 
 
-Example, from `toml/templates/argv-tool`:
+Example, from `toml/templates/scratch-fs`:
 
 ```
 [[mutable]]
-field = "workload.argv"
-freeform = true
-reason = "the caller chooses the command to run within the [exec].allow floor; the cage contains it"
+field = "fs.write"
+oneof = ["~/scratch/work-a", "~/scratch/work-b"]
 ```
 
 ## `[net]`
@@ -560,33 +620,28 @@ reason = "the caller chooses the command to run within the [exec].allow floor; t
 [net]
 # optional
 mode     = "none" | "constrained" | "unconstrained" | "host"
-proxy_listen_v4_address = "..."
-proxy_listen_v6_address = "..."
+proxy_listen_address = "..."
 # decoration
 reason   = "..."
 ```
-Contains: `[net.audit]`, `[net.bind]`, `[net.bpf]`, `[net.ipv6]`, `[net.proxy]`.
+Contains: `[net.audit]`, `[net.bind]`, `[net.bpf]`, `[net.ipv6]`, `[net.proxy]`, `[net.udp]`.
 
 
 `mode`
 :   optional. Egress mode: `"none"` (own empty net-ns, no interfaces), `"constrained"` (own net-ns, One of `none`, `constrained`, `unconstrained`, `host`.
 
-`proxy_listen_v4_address`
-:   optional. IPv4 proxy listen address as `"offset:port"` within the kennel's subnet. A
-
-`proxy_listen_v6_address`
-:   optional. IPv6 proxy listen address as `"offset:port"`.
+`proxy_listen_address`
+:   optional. The proxy listen address as `"offset:port"` within the kennel's subnet (the one
 
 `reason`
 :   decoration. Required (non-empty) only when `mode = "host"`: the documented justification for
 
 
-Example, from `toml/policies/interactive`:
+Example, from `toml/templates/base-flatpak`:
 
 ```
 [net]
-mode = "host"
-reason = "an interactive human shell needs direct, unmediated egress (git/ssh/curl) on the host network stack"
+mode = "none"
 ```
 
 ### `[net.audit]`
@@ -640,7 +695,7 @@ min_port = 0
 :   optional. Explicit allowlist of bindable ports. When non-empty, the workload may
 
 `in6addr_any_policy`
-:   optional. What to do with a wildcard IPv6 bind. One of `rewrite`, `deny`.
+:   optional. What to do with a wildcard IPv6 bind (`"rewrite"` / `"deny"`). One of `rewrite`, `deny`.
 
 `inaddr_any_policy`
 :   optional. What to do with a wildcard IPv4 bind (`"rewrite"` / `"deny"`). One of `rewrite`, `deny`.
@@ -806,6 +861,37 @@ Contains: `[[net.proxy.deny.invariant]]`, `[[net.proxy.deny.policy]]`.
 :   decoration. Threat tags.
 
 
+### `[net.udp]`
+
+`[net.udp]`: opt-in for UDP egress on the proxied path (the tun + fenced broker, W2).
+
+Contains: `[[net.udp.allow]]`.
+
+
+**`[[net.udp.allow]]`** entries (or `{ add, remove }` increment), optional:
+
+`cidr`
+:   optional. A CIDR destination, when the rule is by-address rather than by-name.
+
+`name`
+:   optional. The destination host (or dot-prefixed suffix). Mutually informative with `cidr`.
+
+`ports`
+:   optional. Permitted ports.
+
+`protocol`
+:   optional. Transport protocol (`"tcp"`, `"udp"`, `"any"`). One of `any`, `tcp`, `udp`.
+
+`reason`
+:   decoration. Why this destination is permitted (required).
+
+`threats`
+:   decoration. Threat tags.
+
+`tls`
+:   optional. `tls.required` and friends.
+
+
 ## `[[provides]]`
 
 One `[[provides]]` entry, a capability this kennel offers over the mesh.
@@ -838,14 +924,14 @@ reason   = "..."
 :   required. The typed transport. One of `af-unix`, `dbus-name`, `binder-connector`.
 
 
-Example, from `toml/templates/dbus-broker`:
+Example, from `toml/templates/tun-broker`:
 
 ```
 [[provides]]
-name = "org.projectkennel.dbus-broker"
-shape = "binder-connector"
-endpoint = "/dev/binderfs-mesh/binder"
-reason = "kenneld pushes per-consumer ACCEPT_SESSION (bus + method filter) to the broker's control node on the mesh"
+name = "org.projectkennel.tun-udp"
+shape = "af-unix"
+endpoint = "/run/mesh/tun.sock"
+reason = "the standing UDP-egress mediation: kenneld delivers each consumer's session to the broker's sink"
 ```
 
 ## `[rootfs]`
@@ -905,7 +991,7 @@ profile  = "..."
 :   optional. The baseline profile name (`"default"`).
 
 
-Example, from `toml/templates/base-bwrap`:
+Example, from `toml/templates/base-flatpak`:
 
 ```
 [seccomp]
@@ -943,7 +1029,7 @@ restart  = "always" | "on-failure" | "never"
 :   optional. Restart discipline: `always` / `on-failure` (default) / `never`. One of `always`, `on-failure`, `never`.
 
 
-Example, from `toml/templates/dbus-broker`:
+Example, from `toml/templates/tun-broker`:
 
 ```
 [service]
@@ -977,13 +1063,13 @@ signed_fields = ["..."]
 :   optional. The top-level fields the signature covers (every field except
 
 
-Example, from `toml/policies/interactive`:
+Example, from `toml/templates/ai-coding-strict`:
 
 ```
 [signature]
 algorithm = "sshsig"
 key_id = "kennel-maint-2026"
-signature = "-----BEGIN SSH SIGNATURE-----\nU1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgKWVn2EUqe+ju7quWQv7aY/ihwM\npBFaipL7vU2UVH85IAAAAbcG9saWN5LnYxQHByb2plY3RrZW5uZWwub3JnAAAAAAAAAAZz\naGE1MTIAAABTAAAAC3NzaC1lZDI1NTE5AAAAQO4+Qm6EihZIVrHHJHc5lYaTh22kJbwk+8\nYVUolVJ+bBxwFC1WisLKlFSZ4fXR916/2Lo8NXG0LCGg+pvSOcygQ=\n-----END SSH SIGNATURE-----\n"
+signature = "-----BEGIN SSH SIGNATURE-----\nU1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgKWVn2EUqe+ju7quWQv7aY/ihwM\npBFaipL7vU2UVH85IAAAAbcG9saWN5LnYxQHByb2plY3RrZW5uZWwub3JnAAAAAAAAAAZz\naGE1MTIAAABTAAAAC3NzaC1lZDI1NTE5AAAAQCb2q245dDxf7en7sFpw3mI5hRVx0j8PzZ\nVd3kAvRGxrlvVzhe8EimdBnk73m08M0bXXsbW7c9PBA4ZxJpqiSQw=\n-----END SSH SIGNATURE-----\n"
 ```
 
 ## `[spawn]`
@@ -1007,7 +1093,7 @@ Contains: `[[spawn.allow]]`.
 :   decoration. Why this delegation is extended (required; the spawn waiver is loud, validated at compile).
 
 
-**`[[spawn.allow]]`** entries, optional:
+**`[[spawn.allow]]`** entries (or `{ add, remove }` increment), optional:
 
 `mutable`
 :   optional. Optional per-requester narrowing: the subset of the template's `[[mutable]]` manifest fields
@@ -1116,10 +1202,11 @@ Contains: `[[unix.allow]]`.
 :   decoration. Threat tags.
 
 
-Example, from `toml/templates/dbus-broker`:
+Example, from `toml/templates/base-flatpak`:
 
 ```
 [unix]
+abstract = "deny"
 ```
 
 ## `[unsafe]`
@@ -1154,11 +1241,15 @@ allow_targets = ["..."]
 ```
 [workload]
 # optional
+allowed_args = true
 argv     = ["..."]
 cwd      = "..."
 pinned   = true
 sha256   = ["..."]
 ```
+
+`allowed_args`
+:   optional. Append CLI `-- <args>` to the pinned `argv` instead of refusing them. Only
 
 `argv`
 :   optional. The command + args (`argv[0]` is the program). Absent ⇒ supplied at `kennel run`.
@@ -1173,11 +1264,12 @@ sha256   = ["..."]
 :   optional. Accepted lowercase-hex SHA-256 digests of the workload binary; the spawn verifies
 
 
-Example, from `toml/policies/interactive`:
+Example, from `toml/templates/echo-tool`:
 
 ```
 [workload]
-argv = ["/bin/bash"]
+argv = ["/bin/cat"]
+pinned = true
 ```
 
 ## Common forms

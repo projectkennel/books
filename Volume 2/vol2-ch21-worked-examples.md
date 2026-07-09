@@ -23,7 +23,7 @@ template_name = "base-confined"
 ```
 [cap]
 no_new_privs = true        # PR_SET_NO_NEW_PRIVS, always; cannot be set false
-bounding_set = []          # drop the entire capability bounding set
+# (the capability bounding set is dropped structurally by the spawn — no [cap] knob)
 ```
 
 ### Execution (deny-by-default)
@@ -151,10 +151,9 @@ All egress funnels through a per-kennel SOCKS5/HTTP proxy; the cgroup BPF denies
 ```
 [net]
 mode = "constrained"
-# Both families' proxy listeners are on by default in the proxied modes; a family
-# is enabled iff its address resolves (no separate on/off flag).
+# The proxy listener is on by default in the proxied modes.
 # Listener address is computed from the kennel's <tag>/<ctx> (§7.3.2); override the
-# host offset/port within the kennel's own subnet with proxy_listen_v4_address =
+# host offset/port within the kennel's own subnet with proxy_listen_address =
 # "offset:port" (offset 1..=14, default "1:1080"). Project Kennel injects
 # HTTPS_PROXY / HTTP_PROXY / ALL_PROXY pointing at the computed proxy address.
 ```
